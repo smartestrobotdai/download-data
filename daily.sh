@@ -9,7 +9,11 @@ fi
 echo "`date` started task">>${LOG_FILE}
 echo "node version: `node -v`">>${LOG_FILE}
 export PATH=$PATH:/usr/local/bin/:/usr/bin
+docker-compose up -d
+sleep 10
 node daily.js>>${LOG_FILE} 2>&1
 node minute.js>>${LOG_FILE} 2>&1
-docker exec -t postgres-omxs pg_dumpall -c -U postgres > backup/dump_`date +%d-%m-%Y"_"%H_%M_%S`.sql
+SUFFIX=`date +%d-%m-%Y"_"%H_%M_%S`
+docker exec -t postgres-omxs pg_dumpall -c -U postgres > backup/dump_$SUFFIX.sql
+gzip backup/dump_$SUFFIX.sql
 cd ${ORI_DIR}
