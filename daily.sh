@@ -15,5 +15,10 @@ node daily.js>>${LOG_FILE} 2>&1
 node minute.js>>${LOG_FILE} 2>&1
 SUFFIX=`date +%d-%m-%Y"_"%H_%M_%S`
 docker exec -t postgres-omxs pg_dumpall -c -U postgres > backup/dump_$SUFFIX.sql
+
 gzip backup/dump_$SUFFIX.sql
+cp -f backup/dump_$SUFFIX.sql.gz backup/dump.sql.gz
+git add backup/dump.sql.gz
+git commit -m "new dump $SUFFIX"
+git push
 cd ${ORI_DIR}
