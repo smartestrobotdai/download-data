@@ -19,6 +19,18 @@ services:
     networks:
       postgres:
 
+  pgadmin:
+    container_name: pgadmin-omxs
+    image: dpage/pgadmin4
+    restart: unless-stopped
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=ken.dai@outlook.com
+      - PGADMIN_DEFAULT_PASSWORD=dai
+    ports:
+      - "5050:80"
+    networks:
+      postgres:
+
 networks:
     postgres:
     
