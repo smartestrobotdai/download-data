@@ -19,6 +19,11 @@ docker exec -t postgres-omxs pg_dumpall -c -U postgres > backup/dump_$SUFFIX.sql
 gzip backup/dump_$SUFFIX.sql
 cp -f backup/dump_$SUFFIX.sql.gz backup/dump.sql.gz
 git add backup/dump.sql.gz
-git commit -m "new dump $SUFFIX"
+
+PGPASSWORD=dai psql -h 0.0.0.0 -p 5434 -U postgres -f export_data.sql
+docker cp postgres-omxs:/tmp/data.csv ./data
+gzip data/data.csv
+git add data/data.csv.gz
+git commit -m "new backup and new data"
 git push
 cd ${ORI_DIR}
