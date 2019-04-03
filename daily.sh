@@ -1,12 +1,13 @@
 #!/bin/bash
 ORI_DIR=`pwd`
 DIR=`dirname $0`
-LOG_FILE="nightly.log"
+LOG_FILE="$DIR/nightly.log"
+
 if [ ! -z ${DIR} ]; then
   cd ${DIR}
   echo "changing directory to ${DIR}">>${LOG_FILE}
 fi
-echo "`date` started task">>${LOG_FILE}
+echo "`date` started fetching data">>${LOG_FILE}
 echo "node version: `node -v`">>${LOG_FILE}
 export PATH=$PATH:/usr/local/bin/:/usr/bin
 docker-compose up -d
@@ -14,18 +15,21 @@ sleep 10
 cd data-sink/
 node daily.js>>${LOG_FILE} 2>&1
 node minute.js>>${LOG_FILE} 2>&1
-cd ..
+cd $DIR
+echo "`date` finished fetching data, backup database">>${LOG_FILE}
 SUFFIX=`date +%d-%m-%Y"_"%H_%M_%S`
-docker exec -t postgres-omxs pg_dumpall -c -U postgres > backup/dump_$SUFFIX.sql
+docker exec -t postgres-omxs pg_dumpall -c -U postgres > dbbackup/dump_$SUFFIX.sql
 
-gzip backup/dump_$SUFFIX.sql
-cp -f backup/dump_$SUFFIX.sql.gz backup/dump.sql.gz
-git add backup/dump.sql.gz
+gzip dbbackup/dump_$SUFFIX.sql
+cp -f dbbackup/dump_$SUFFIX.sql.gz dbbackup/dump.sql.gz
+git add dbbackup/dump.sql.gz
 
 PGPASSWORD=dai psql -h 0.0.0.0 -p 5434 -U postgres -f export_data.sql
 docker cp postgres-omxs:/tmp/data.csv ./data
+rm -rf data/data.csv.gz
 gzip data/data.csv
 git add data/data.csv.gz
 git commit -m "new backup and new data"
 git push
+echo "`date` daily task finished">>${LOG_FILE}
 cd ${ORI_DIR}
