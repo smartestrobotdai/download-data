@@ -11,8 +11,10 @@ echo "node version: `node -v`">>${LOG_FILE}
 export PATH=$PATH:/usr/local/bin/:/usr/bin
 docker-compose up -d
 sleep 10
+cd data-sink/
 node daily.js>>${LOG_FILE} 2>&1
 node minute.js>>${LOG_FILE} 2>&1
+cd ..
 SUFFIX=`date +%d-%m-%Y"_"%H_%M_%S`
 docker exec -t postgres-omxs pg_dumpall -c -U postgres > backup/dump_$SUFFIX.sql
 
