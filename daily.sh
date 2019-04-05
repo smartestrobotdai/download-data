@@ -15,6 +15,12 @@ sleep 10
 cd data-sink/
 node daily.js>>${LOG_FILE} 2>&1
 node minute.js>>${LOG_FILE} 2>&1
+if [ $? -ne 0 ]; then
+  echo "fetching data failed"
+  cd $DIR
+  exit -1
+fi
+
 cd $DIR
 echo "`date` finished fetching data, backup database">>${LOG_FILE}
 SUFFIX=`date +%d-%m-%Y"_"%H_%M_%S`
