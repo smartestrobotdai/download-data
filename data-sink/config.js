@@ -3,7 +3,7 @@ let pgConfig = {
   host: 'localhost',
   database: 'postgres',
   password: 'dai',
-  port: 5434
+  port: 5432
 }
 
 exports.pgConfig = pgConfig;
