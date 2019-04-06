@@ -3,6 +3,11 @@ ORI_DIR=`pwd`
 DIR=`dirname $0`
 LOG_FILE="$DIR/nightly.log"
 
+if [ $(date +%u) -gt 5 ]; then
+   echo "weekend, aborting...">>${LOG_FILE}
+   exit 0
+fi
+
 if [ ! -z ${DIR} ]; then
   cd ${DIR}
   echo "changing directory to ${DIR}">>${LOG_FILE}
