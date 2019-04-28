@@ -9,30 +9,71 @@ function delay(t, val) {
 }
 async function getPriceDelayed(browser, time) {
 
-    return new Promise(resolve => {
-        console.log('current time1:' +  Date.now())
-        setTimeout(async function(browser) {
-            console.log('current time before fetching:' +  Date.now())
-            let result = await browser.executeAsync(done => {
-                var oReq = new XMLHttpRequest();
-                oReq.open("GET", "https://www.nordnet.se/graph/instrument/11/101/price")
-                oReq.onreadystatechange = function(e) {
-                    if (oReq.readyState === 4) {
-                        done(oReq.responseText)
-                    }
+  return new Promise(resolve => {
+    console.log('current time1:' +  Date.now())
+    setTimeout(async function(browser) {
+      console.log('current time before fetching:' +  Date.now())
+      let result = await browser.executeAsync(done => {
+        function get(oReq, url, callback) {
+          oReq.open("GET", url)
+          oReq.onreadystatechange = function(e) {
+              console.log(oReq.readyState)
+              if (oReq.readyState === 4) {
+                  console.log('price')
+                  console.log(oReq.responseText)
+                  callback()
+              }
+          }
+          oReq.onerror = function() {
+              console.log('error!')
+              
+          }
+          oReq.send()
+        }
 
-                };
-                oReq.onerror = function() {
-                    console.log('error!')
-                    done('error')
-                }
-                oReq.send();                
-            })
-            console.log('current time after fetching:' +  Date.now())
-            console.log(result)
-            resolve(result)
-        }, time, browser)
-    })
+        function post(oReq, url, form, callback) {
+          oReq.open("POST", url)
+          oReq.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
+          oReq.onreadystatechange = function(e) {
+            if (oReqList[1].readyState === 4) {
+              console.log('queue')
+              console.log(oReq.responseText)
+              callback()
+            }
+          }
+          oReq.send('identifier=101&marketplace=11&orderdjupsantal=1&country=Sverige')
+        }
+
+
+        let baseUrl = 'https://www.nordnet.se/'
+        let urlList = ['graph/instrument/11/101/price',
+                        'mux/ajax/marknaden/aktiehemsidan/orderdjup.html']
+        
+        var responseCount = 0
+
+
+        
+        oReqList = []
+        for (let i = 0; i < urlList.length; i++) {
+          let oReq = new XMLHttpRequest();
+          oReqList.push(oReq)
+
+          url = urlList[i]
+          if (i === 0) {
+              get(oReq, url, () => {console.log('get callback')})
+          } else {
+              form = 'identifier=101&marketplace=11&orderdjupsantal=1&country=Sverige'
+              post(oReq, url, form,
+                  () => {console.log('post callback')})
+
+          }
+        }
+      })
+      console.log('current time after fetching:' +  Date.now())
+      console.log(result)
+      resolve(result)
+    }, time, browser)
+  })
 }
 
 // TODO:
@@ -106,7 +147,7 @@ for (i=0; i<2; i++) {
         }
     });
 */
-
+    
     var browser = await remote({
         logLevel: 'info',
         host: 'localhost',
@@ -116,10 +157,21 @@ for (i=0; i<2; i++) {
             browserName: 'chrome'
         }
     });
+    
 
-    // TODO: login
-    await browser.url('https://www.nordnet.se')
-    await delay(1000)
+    /*
+    var browser = await remote({
+        logLevel: 'info',
+        host: 'localhost',
+        port: 4445,
+        path: '/', // only for firefox
+        capabilities: {
+            browserName: 'firefox'
+        }
+    });
+    */
+    await browser.url('https://www.nordnet.se/start.html')
+    await delay(10000)
     await browser.setTimeout({ 'script': 60000 });
     while (1) {
         // get time delta to next minute.
@@ -130,6 +182,7 @@ for (i=0; i<2; i++) {
         await getPriceDelayed(browser, msToNextMinute)
 
     }
+ 
 
     /*
     const link = await browser.$('=Logga in')
@@ -155,11 +208,13 @@ for (i=0; i<2; i++) {
     await ok.click()
 
     await delay(10000)
+   // TODO: login
 
+    */
 
 
     const title = await browser.getTitle();
     console.log('Title was: ' + title);
-    */
+    
     await browser.deleteSession();
 })().catch((e) => console.error(e));
