@@ -4,6 +4,7 @@
   "description": "my eye",
   "main": "test.js",
   "dependencies": {
+    "cheerio": "^1.0.0-rc.3",
     "webdriverio": "^5.7.15"
   },
   "devDependencies": {
