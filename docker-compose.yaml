@@ -31,29 +31,6 @@ services:
     networks:
       postgres:
 
-  chrome-eye:
-    container_name: chrome-eye
-    image: selenium/standalone-chrome
-    restart: unless-stopped
-    ports:
-      - "4444:4444"
-    expose:
-      - "4444"
-    networks: 
-      nats:
-
-  nats_bus:
-    container_name: nats_bus
-    image: nats
-    restart: unless-stopped
-    ports:
-      - "4222:4222"
-    expose:
-      - "4222"
-    networks:
-      nats:
-
 networks:
     postgres:
-    nats:
     
