@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
+# In[1]:
 
 
 import numpy as np
@@ -13,6 +13,7 @@ import GPyOpt
 import copy
 import time
 import datetime
+import sys
 
 class Model:
     # Network Parameters
@@ -31,15 +32,14 @@ class Model:
           {'name': 'num_layers', 'type': 'discrete', 'domain': (1,2,3,4)},
           {'name': 'rnn_type', 'type': 'discrete', 'domain': (0,1,2)},
           {'name': 'learning_period', 'type': 'discrete', 'domain': tuple(range(10,41,10))},
-          {'name': 'prediction_period', 'type': 'discrete', 'domain': tuple(range(2,11,2))},
+          {'name': 'prediction_period', 'type': 'discrete', 'domain': (1,2,3,5,8,13)},
           {'name': 'max_repeats', 'type': 'discrete', 'domain': tuple(range(1,52,10))},
           {'name': 'beta', 'type': 'discrete', 'domain': (99, 98)},
           {'name': 'ema', 'type': 'discrete', 'domain': (10,20)},
           {'name': 'time_format', 'type': 'discrete', 'domain': (0,1,2)}, #1 for stepofday, 2 for stepofweek
           {'name': 'volume_input', 'type': 'discrete', 'domain': (0,1)},
           {'name': 'use_centralized_bid', 'type': 'discrete', 'domain': (0,1)},
-          {'name': 'split_daily_data', 'type': 'discrete', 'domain': (0,1)},
-          {'name': 'related_stock', 'type': 'discrete', 'domain': (0,1)},
+          {'name': 'split_daily_data', 'type': 'discrete', 'domain': (0,1)}
          ]
     def __init__(self, regen):
         if regen == False:
@@ -156,7 +156,7 @@ class Model:
         volume_input = int(features[10])
         use_centralized_bid = int(features[11])
         split_daily_data = int(features[12])
-        related_stock = int(features[13])
+
         # load data
         file_name = "np_ema{}_beta{}.npz".format(ema, beta)
         data_all = np.load(file_name)['arr_0']
@@ -164,10 +164,7 @@ class Model:
         
         # for the stock 20, the max related stock is 21 (0.94),
         # the medium stock is 18 (0.29), the min related stock is 5 (0.05)
-        stock_index = [28]
-        
-        if related_stock == 1:
-            stock_index += [5]
+        stock_index = [self.current_stock_index]
         
         # we must convert the array to 2D
         if use_centralized_bid == 0:
@@ -350,15 +347,19 @@ class Model:
         return answer
                 
         
-    def optimize(self, max_iter=300):
-        self.min_answer = 999
-        myBopt = GPyOpt.methods.BayesianOptimization(f=self.opt_wrapper,  # Objective function       
-                                             domain=self.mixed_domain,          # Box-constraints of the problem
-                                             initial_design_numdata = 20,   # Number data initial design
-                                             acquisition_type='EI',        # Expected Improvement
-                                             exact_feval = True)           # True evaluations, no sample noise
-        
-        myBopt.run_optimization(max_iter,eps=0)
+    def optimize(self, stockIndexList, max_iter=300):
+        for item in stockIndexList:
+            print("Starting optimize stock index {}".format(item))
+            self.min_answer = 999
+            self.current_stock_index = int(item)
+            myBopt = GPyOpt.methods.BayesianOptimization(f=self.opt_wrapper,  # Objective function       
+                                                 domain=self.mixed_domain,          # Box-constraints of the problem
+                                                 initial_design_numdata = 20,   # Number data initial design
+                                                 acquisition_type='EI',        # Expected Improvement
+                                                 exact_feval = True)           # True evaluations, no sample noise
+            
+            myBopt.run_optimization(max_iter,eps=0)
+            print("Finishing optimize stock index {}".format(item))
     
     
     # no optimize, we have already knew the answer. run it and save the results into file.
@@ -366,360 +367,33 @@ class Model:
             num_layers, rnn_type, 
             learning_period, prediction_period, 
             max_repeats, beta, ema, time_input, volume_input,
-            use_centralized_bid, split_daily_data, related_stock):
+            use_centralized_bid, split_daily_data):
         features = [n_neurons, learning_rate, 
             num_layers, rnn_type, 
             learning_period, prediction_period, 
             max_repeats, beta, ema, time_input, volume_input,
-            use_centralized_bid, split_daily_data, related_stock]
+            use_centralized_bid, split_daily_data]
         
         answer, my_test_result_list = self.get_answer(features)
         print("Finished, result:{}".format(answer))
         return my_test_result_list
 
 
+# In[7]:
+
+
+if len(sys.argv) == 1:
+    print("usage: omx30-lstm.py stock_index_list")
+    print("ie: omx30-lstm.py 5 14 28")
+    sys.exit()
+
+stock_index_list = sys.argv[1:]
+
+# TODO: check the time of npz file and decide should we re-generate it.
+model = Model(False)
+
 # In[3]:
-
-
-model = Model(True)
-
-
-# In[3]:
-
-
-
-model.optimize()
-
-
-# In[8]:
-
-
-#find result:0.00021723691439287255, n_neurons:120.0,learning_rate:0.001,num_layers:2.0,rnn_type:1.0,learning_period:30.0,prediction_period:4.0,max_repeats:51.0,beta:99.0,ema:10.0,time_format:1.0,
-#volume_input:0.0,use_centralized_bid:1.0,split_daily_data:1.0,related_stock:1.0
-
-my_test_result_list = model.run(n_neurons = 120, 
-                                learning_rate=0.001, 
-                                num_layers=2, 
-                                rnn_type=1,
-                                learning_period=30, 
-                                prediction_period=4, 
-                                max_repeats=51, 
-                                beta=99, 
-                                ema=10,
-                                time_input=1,
-                                volume_input=0,
-                                use_centralized_bid=1,
-                                split_daily_data=1,
-                                related_stock=1)
-
-
-# In[9]:
-
-
-np.save('results.np', my_test_result_list)
-
-
-# In[31]:
-
-
-filename = "data-prep-ema{}-beta{}.csv".format(10,99)
-data = pd.read_csv(filename, parse_dates=["timestamp"])
-
-
-# In[32]:
-
-
-data
-
-
-# In[33]:
-
-
-ori_shape = my_test_result_list.shape
-
-df = pd.DataFrame(my_test_result_list.reshape(ori_shape[0]*ori_shape[1], ori_shape[2]))
-
-
-# In[34]:
-
-
-df
-
-
-# In[35]:
-
-
-len(my_test_result_list)
-
-
-# In[36]:
-
-
-df.corr()
-
-
-# In[37]:
-
-
-groups = data.set_index('timestamp').groupby(lambda x: x.date())
-
-
-# In[38]:
-
-
-data
-
-
-# In[40]:
-
-
-# start day is the learning period.
-ori_shape = my_test_result_list.shape
-my_test_result_list = my_test_result_list.reshape(int(ori_shape[0]/2), ori_shape[1]*2, ori_shape[2])
-start_day = 30
-i = 0
-my_df_list = []
-for index, df in groups:
-    print("handling day: {}".format(i))
-    if i >= start_day and i-start_day < len(my_test_result_list):
-        print(i)
-        my_df = df[['last_20','value_ema_10_beta_99_20','last_5','value_ema_10_beta_99_5']]
-        print(len(my_test_result_list[i-start_day,:,0]))
-        print(len(my_df))
-        my_df['test_y_20'] = my_test_result_list[i-start_day,:,0]
-        my_df['test_y_5'] = my_test_result_list[i - start_day,:,1] 
-        my_df['valid_y_20'] = my_test_result_list[i - start_day,:,2]
-        my_df['valid_y_5'] = my_test_result_list[i - start_day,:,3]
-        my_df_list.append(my_df)
-        
-    i+=1
-   
-
-
-# In[41]:
-
-
-my_df_list[-1]
-
-
-# In[43]:
-
-
-buy_threshold = 9.17555532e-05
-sell_threshold = -9.62431518e-04
-min_hold_steps = 61
-tot_profit = 1
-tot_stock_profit = 1
-result_list = []
-for day_idx in range(len(my_df_list)):
-    print("starting day {}".format(day_idx))
-    trades = 0
-    daily_profit = 1
-    state = 0
-    df = my_df_list[day_idx]
-    for step in range(len(df)):
-        if df.iloc[step]['test_y_20'] > buy_threshold and state == 0:
-            price = df.iloc[step]['last_20']
-            print("buy at step {} price:{}".format(step, price))
-            state = 1
-            last_step = step
-        elif state==1 and ((df.iloc[step]['test_y_20'] < buy_threshold and step - last_step > min_hold_steps) or step == len(df) - 1):
-            last_price = price
-            price = df.iloc[step]['last_20']
-            print("sell at step {} price:{}".format(step, price))
-            profit = (price - last_price)/last_price
-            tot_profit *= (1+profit)
-            daily_profit *= (1 + profit)
-            state = 0
-            trades += 1
-    last = df.iloc[len(df)-1].last_20
-    open = df.iloc[0].last_20
-    stock_profit = (last - open) / open
-    tot_stock_profit *= (1+stock_profit)
-    
-    result_list.append([day_idx, trades, tot_stock_profit, tot_profit])
-    print("finishing day {}, daily_profit:{}".format(day_idx, daily_profit))
-print(tot_profit)
-
-
-# In[44]:
-
-
-result_df = pd.DataFrame(result_list, columns=['day','trades','stock','profit'])
-result_df
-
-
-# In[45]:
-
-
-result_df[['day','stock','profit']].plot(x='day')
-
-
-# In[86]:
-
-
-result_df[['day','trades']].plot(x='day')
-
-
-# In[53]:
-
-
-mixed_domain = [{'name': 'buy_threshold', 'type': 'continuous', 'domain': (0.0, 0.001)},
-                {'name': 'sell_threshold', 'type': 'continuous', 'domain': (-0.001, 0.0)},
-                {'name': 'min_hold_steps', 'type': 'discrete', 'domain': range(10,100)},
-        ]
-   
-
-   
-def opt_wrapper(X_list):
-   
-   print(X_list)
-   buy_threshold = X_list[0][0]
-   sell_threshold = X_list[0][1]
-   min_hold_steps = int(X_list[0][2])
-   tot_profit = 1
-   tot_stock_profit = 1
-   last_step = None
-   max_trades = 2
-   for day_idx in range(len(my_df_list)):
-       #print("starting day {}".format(day_idx))
-       trades = 0
-       daily_profit = 1
-       state = 0
-       df = my_df_list[day_idx]
-       for step in range(len(df)):
-           if state == 0 and trades<max_trades:
-               if df.iloc[step]['test_y_5'] > buy_threshold:
-                   price = df.iloc[step]['last_5']
-                   hold = 5
-               elif df.iloc[step]['test_y_20'] > buy_threshold:
-                   price = df.iloc[step]['last_20']
-                   hold = 20
-                   #print("buy at step {} price:{}".format(step, price))
-               state = 1
-               last_step = step
-           elif state == 1:
-               if (df.iloc[step]['test_y_'+str(hold)] < buy_threshold and 
-                   step - last_step > min_hold_steps) or step == len(df)-1:
-                   
-                   last_price = price
-                   price = df.iloc[step]['last_'+str(hold)]
-                   #print("sell at step {} price:{}".format(step, price))
-                   profit = (price - last_price)/last_price
-                   tot_profit *= (1+profit)
-                   daily_profit *= (1 + profit)
-                   state = 0
-                   hold = 0
-                   trades += 1
-       last = df.iloc[len(df)-1].last_20
-       open = df.iloc[0].last_20
-       stock_profit = (last - open) / open
-       tot_stock_profit *= (1+stock_profit)
-       #print("finishing day {}, daily_profit:{}".format(day_idx, daily_profit))
-   print("{}, profit:{}".format(X_list, tot_profit))
-   return -tot_profit
-   
-
-
-# In[49]:
-
-
-myBopt = GPyOpt.methods.BayesianOptimization(opt_wrapper,  # Objective function       
-                                     domain=mixed_domain,          # Box-constraints of the problem
-                                     initial_design_numdata = 20,   # Number data initial design
-                                     acquisition_type='EI',        # Expected Improvement
-                                     exact_feval = True)           # True evaluations, no sample noise
-
-myBopt.run_optimization(100,eps=0)
-
-
-# In[82]:
-
-
-my_df[['test_y','valid_y']].corr()
-
-
-# In[83]:
-
-
-my_df['diff']=my_df['test_y']-my_df['valid_y']
-
-
-# In[84]:
-
-
-my_df['diff'].plot()
-
-
-# In[85]:
-
-
-my_df['diff'].plot.kde()
-
-
-# In[86]:
-
-
-my_df['diff'].mean()
-
-
-# In[87]:
-
-
-my_df.plot.scatter(x='valid_y', y='test_y',s=1)
-
-
-# In[88]:
-
-
-my_df['diff'].max()
-
-
-# In[89]:
-
-
-my_df.loc[my_df['valid_y'].argmax()]
-
-
-# In[90]:
-
-
-my_df
-
-
-# In[91]:
-
-
-buy_threshold = 0.0005
-sell_threshold = -0.0005
-
-action_steps = my_df[my_df['test_y']>0.0005].append(my_df[my_df['test_y']<-0.0005]).sort_values('timestamp')
-
-
-# In[92]:
-
-
-state = 0
-profit = 1
-for i in range(len(my_df)):
-    row = my_df.iloc[i]
-    if row['test_y'] > 0.0001 and state == 0:
-        print("buy at {} price:{}".format(row.index, row.last_20))
-        state = 1
-        price = row.last_20
-    elif row['test_y'] < -0.0001 and state == 1:
-        state = 0
-        ratio = (row.last_20 - price) / price
-        print("sell at {} price:{}".format(row.index, row.last_20)) 
-        if ratio != 0:
-            profit = profit * ratio
-print("profit={}".format(profit))
-
-
-# In[69]:
-
-
-action_steps
+model.optimize(stock_index_list)
 
 
 # In[ ]:
