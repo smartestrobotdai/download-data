@@ -290,14 +290,14 @@ class Model:
                         feed_dict = {
                             X: X_batch,
                             y: y_batch,
-                            init_state: rnn_states_before_training
+                            init_state: rnn_states
                         }
                         
                         my_op, my_new_states, my_loss_train, my_outputs = sess.run([training_op, new_states, loss, outputs], feed_dict=feed_dict)
                         
                         my_loss_train_list.append(my_loss_train)
                         rnn_states = my_new_states
-                        if seq - learning_start_seq == prediction_period:
+                        if seq-learning_start_seq+1 == prediction_period:
                             # next training loop starts from here
                             tmp_states = copy.deepcopy(rnn_states)
                     my_loss_train_avg = sum(my_loss_train_list) / len(my_loss_train_list)
@@ -340,10 +340,10 @@ class Model:
             #self.draw_step_profit_graph(self.step_profit_list, "step_profit_{}".format(answer[i][0]))
             #self.step_profit_list = []
             if answer[i][0] < self.min_answer:
-                print("find new opt:{}, {}".format(answer[i][0], self.get_parameter_str(X_list[i])))
+                print("find new opt for stock {} :{}, {}".format(self.current_stock_index, answer[i][0], self.get_parameter_str(X_list[i])))
                 self.min_answer = answer[i][0]
             else:
-                print("find result:{}, {}".format(answer[i][0], self.get_parameter_str(X_list[i])))
+                print("find result for stock {} :{}, {}".format(self.current_stock_index, answer[i][0], self.get_parameter_str(X_list[i])))
         return answer
                 
         
