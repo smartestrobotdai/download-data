@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[55]:
+# In[56]:
 
 
 import pandas as pd
@@ -15,21 +15,21 @@ df=pd.read_csv('../data/data.csv.gz', compression='gzip', sep=',')
 df['timestamp'] = pd.to_datetime(df['time_stamp'], format="%Y-%m-%d %H:%M:%S").dt.tz_convert('CET')
 
 
-# In[56]:
+# In[57]:
 
 
 stock_delta = df['stock_id'] - df['stock_id'].shift()
 time_delta = (df['timestamp'] - df['timestamp'].shift()).fillna(10000).dt.total_seconds()
 
 
-# In[57]:
+# In[58]:
 
 
 stock_split_index=df.index[stock_delta!=0].tolist()
 stock_split_index.append(len(df))
 
 
-# In[58]:
+# In[59]:
 
 
 day_split_index=df.index[abs(time_delta)>36000].tolist()
@@ -37,7 +37,7 @@ day_split_index.insert(0, 0)
 day_split_index.append(len(df))
 
 
-# In[59]:
+# In[60]:
 
 
 stock_id_list = df['stock_id'].unique().tolist()
@@ -48,7 +48,7 @@ for stock_index in stock_id_list:
     i+=1
 
 
-# In[60]:
+# In[61]:
 
 
 current_stock_index = 0
@@ -66,7 +66,7 @@ for i in range(len(day_split_index) - 1):
         current_stock_index += 1
 
 
-# In[61]:
+# In[62]:
 
 
 for stock_id in range(len(stock_id_list)):
@@ -79,6 +79,12 @@ for stock_id in range(len(stock_id_list)):
 
 
 # In[63]:
+
+
+time_series_all_list[14][0]
+
+
+# In[64]:
 
 
 for stock_id in range(len(time_series_all_list)):
@@ -107,9 +113,12 @@ for stock_id in range(len(time_series_all_list)):
         df3['volume'].iloc[:6] = df3['volume'].iloc[6] / 6
         df3['volume'].iloc[6] = df3['volume'].iloc[6] / 6
         df3['volume'].iloc[-5:] = df3['volume'].iloc[-1]/5
+
         
         
         df = df3.reset_index().rename({'index':'timestamp'}, axis=1)
+
+        
         #df['timestamp'] = pd.to_datetime(df['time_stamp'], format="%Y-%m-%d %H:%M:%S").dt.tz_convert('Europe/Stockholm')
         df['ema_10'] = df['last'].ewm(span=10, adjust=False).mean()
         df['ema_20'] = df['last'].ewm(span=20, adjust=False).mean()
@@ -131,6 +140,12 @@ for stock_id in range(len(time_series_all_list)):
         time_series_all_list[stock_id][day_id] = df.fillna(0)
 
 
+# In[ ]:
+
+
+time_series_all_list[0][1]
+
+
 # In[65]:
 
 
@@ -138,7 +153,7 @@ columns = ['timestamp','last', 'diff_ema_20', 'value_ema_20_beta_99', 'value_ema
            'diff_ema_10', 'value_ema_10_beta_99', 'value_ema_10_beta_98', 'volume']
 
 
-# In[70]:
+# In[67]:
 
 
 
@@ -178,7 +193,6 @@ def merge(df1, df2):
 
 columns_wanted = ['timestamp','last', 'diff_ema_20', 'value_ema_20_beta_99', 'value_ema_20_beta_98', 
            'diff_ema_10', 'value_ema_10_beta_99', 'value_ema_10_beta_98', 'volume']
-df_day_list = []
 
 for day_id in range(len(time_series_all_list[0])):
     print("processing day: {}".format(day_id))
@@ -198,15 +212,27 @@ for day_id in range(len(time_series_all_list[0])):
 
     index = 0
     df_merged_daily = reduce(merge, df_list)
+    
+
+    
     columns = df_merged_daily.columns.tolist()
     columns.sort(key=func)
     df_merged_sorted = df_merged_daily[columns]
     
-    df_day_list.append(df_merged_sorted)
+    df_merged_sorted['step_of_day'] = np.arange(0, len(df_merged_sorted))
+    day_of_week = df_merged_sorted['timestamp'].iloc[0].weekday()
+    df_merged_sorted['step_of_week'] = len(df_merged_sorted) * day_of_week + df_merged_sorted['step_of_day']
+    
     if day_id == 0:
         df_merged = df_merged_sorted
     else:
         df_merged = df_merged.append(df_merged_sorted)
+
+
+# In[71]:
+
+
+df_merged
 
 
 # In[72]:
@@ -239,14 +265,16 @@ for item in columns:
     elif 'value_ema_20_beta_99' in item:
         value_ema_20_beta_99_columns.append(item)
 
+timesteps = ['step_of_day', 'step_of_week']
+
 
 # In[73]:
 
 
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_10_columns + value_ema_10_beta_98_columns].to_csv('data-prep-ema10-beta98.csv')
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_10_columns + value_ema_10_beta_99_columns].to_csv('data-prep-ema10-beta99.csv')
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_20_columns + value_ema_20_beta_98_columns].to_csv('data-prep-ema20-beta98.csv')
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_20_columns + value_ema_20_beta_99_columns].to_csv('data-prep-ema20-beta99.csv')
+df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_10_columns + value_ema_10_beta_98_columns + timesteps].to_csv('data-prep-ema10-beta98.csv')
+df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_10_columns + value_ema_10_beta_99_columns + timesteps].to_csv('data-prep-ema10-beta99.csv')
+df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_20_columns + value_ema_20_beta_98_columns + timesteps].to_csv('data-prep-ema20-beta98.csv')
+df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_20_columns + value_ema_20_beta_99_columns + timesteps].to_csv('data-prep-ema20-beta99.csv')
 
 
 # In[ ]:
