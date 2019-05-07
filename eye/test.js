@@ -1,4 +1,5 @@
 const { remote } = require('webdriverio');
+const TEST = 1
 
 function delay(t, val) {
    return new Promise(function(resolve) {
@@ -7,21 +8,40 @@ function delay(t, val) {
        }, t);
    });
 }
-async function getPriceDelayed(browser, time) {
 
-  return new Promise(resolve => {
-    console.log('current time1:' +  Date.now())
-    setTimeout(async function(browser) {
-      console.log('current time before fetching:' +  Date.now())
-      let result = await browser.executeAsync(done => {
+function getValidResponse(body, expectTimestamp) {
+  let parsed = JSON.parse(body)
+  for (let i = 0; i < parsed.length; i++) {
+    if (parsed[i].time === expectTimestamp.getTime()) {
+      return parsed.slice(0,i)
+    }
+  }
+  return null
+}
+
+function getDate(ts) {
+  return `${ts.getFullYear()}-${ts.getMonth()+1}-${ts.getDate()}`
+}
+
+
+let responseBodyCache = {}
+async function fetch(expectTimestamp, browser, resolve, retries) {
+    console.log('fetching ' +  expectTimestamp)
+    let date = getDate(expectTimestamp)
+
+    let result = null
+    if (date in responseBodyCache) {
+      console.log(`${date} fetched from cache`)
+      result = responseBodyCache[date]
+    } else {
+      result = await browser.executeAsync((stockId, date, done) => {
         function get(oReq, url, callback) {
           oReq.open("GET", url)
           oReq.onreadystatechange = function(e) {
               console.log(oReq.readyState)
               if (oReq.readyState === 4) {
                   console.log('price')
-                  console.log(oReq.responseText)
-                  callback()
+                  callback(oReq.responseText)
               }
           }
           oReq.onerror = function() {
@@ -31,48 +51,48 @@ async function getPriceDelayed(browser, time) {
           oReq.send()
         }
 
-        function post(oReq, url, form, callback) {
-          oReq.open("POST", url)
-          oReq.setRequestHeader("Content-Type", "application/x-www-form-urlencoded");
-          oReq.onreadystatechange = function(e) {
-            if (oReqList[1].readyState === 4) {
-              console.log('queue')
-              console.log(oReq.responseText)
-              callback()
-            }
-          }
-          oReq.send('identifier=101&marketplace=11&orderdjupsantal=1&country=Sverige')
-        }
 
+        let url = `graph/instrument/11/${stockId}/?from=${date}&to=${date}`
+        let oReq = new XMLHttpRequest()
+        get(oReq, url, body => {
+          // TODO:  check the timestamp
+          done(body)
+        })
+      }, 101, date)
+    }
 
-        let baseUrl = 'https://www.nordnet.se/'
-        let urlList = ['graph/instrument/11/101/price',
-                        'mux/ajax/marknaden/aktiehemsidan/orderdjup.html']
-        
-        var responseCount = 0
+    console.log('current time after fetching:' +  Date.now())
+    // console.log(result)
+    // check the timestamp
+    // let's check the time
+    let day = Math.trunc(expectTimestamp.getTime() / 24*3600*1000)
+    let today = Math.trunc(Date.now() / 24*3600*1000)
 
-
-        
-        oReqList = []
-        for (let i = 0; i < urlList.length; i++) {
-          let oReq = new XMLHttpRequest();
-          oReqList.push(oReq)
-
-          url = urlList[i]
-          if (i === 0) {
-              get(oReq, url, () => {console.log('get callback')})
-          } else {
-              form = 'identifier=101&marketplace=11&orderdjupsantal=1&country=Sverige'
-              post(oReq, url, form,
-                  () => {console.log('post callback')})
-
-          }
-        }
-      })
-      console.log('current time after fetching:' +  Date.now())
+    // when the date of wanted ts less than today, obviously it is a testing.
+    if (day < today && !(date in responseBodyCache)) {
+      console.log(`date: ${date} saved to cache`)
       console.log(result)
-      resolve(result)
-    }, time, browser)
+      responseBodyCache[date] = result
+      
+    }
+
+    let ret = getValidResponse(result, expectTimestamp)
+    if (ret === null) {
+      if (retries < 3) {
+        console.log(`failed to fetch data at ${expectTimestamp}, retries: ${retries}`)
+        await fetch(expectTimestamp, browser, resolve, retries+1)
+      } else {
+        resolve({'code': -1})
+      }
+    }
+    resolve({'code': 0, 'info': ret}) 
+}
+
+
+async function getPriceDelayed(browser, waitTime, expectTimestamp) {
+  return new Promise((resolve,reject) => {
+    console.log('current time1:' +  Date.now())
+    setTimeout(fetch, waitTime, expectTimestamp, browser, resolve, reject, 0)
   })
 }
 
@@ -135,6 +155,39 @@ for (i=0; i<2; i++) {
 
 */
 
+
+// at 8:59:01 of the start date to the end 
+// 
+
+function addSeconds(timestamp, seconds) {
+  return new Date(timestamp.getTime() + seconds*1000)
+}
+
+
+function *getExpectedTimestamp(startDate, endDate) {
+
+  let startDayOpenTime = new Date(startDate + ' 9:00:00')
+  let endDayOpenTime = new Date(endDate + ' 9:00:00')
+  let startTime = startDayOpenTime
+
+  while (startTime <= endDayOpenTime) {
+    // endTime is 17:24:00
+    let endTime1724 = addSeconds(startTime, 30240)
+    let ts = startTime
+    while (ts <= endTime1724) {
+      yield ts
+      ts = addSeconds(ts, 60)
+    }
+
+    //  
+    let endTime1729 = addSeconds(endTime1724 ,5 * 60)
+
+    yield endTime1729
+
+    startTime = addSeconds(startTime, 3600 * 24)
+  }
+}
+
 (async () => {
 /*
     var browser = await remote({
@@ -149,7 +202,7 @@ for (i=0; i<2; i++) {
 */
     
     var browser = await remote({
-        logLevel: 'info',
+        logLevel: 'warn',
         host: 'localhost',
         port: 4321,
         //path: '/', // only for firefox
@@ -171,18 +224,42 @@ for (i=0; i<2; i++) {
     });
     */
     await browser.url('https://www.nordnet.se/start.html')
-    await delay(10000)
+    await delay(2000)
     await browser.setTimeout({ 'script': 60000 });
-    while (1) {
-        // get time delta to next minute.
-        msNow = Date.now()
-        msToNextMinute = 60000 - Date.now() % 60000
-        msToNextMinute -= 20
-        console.log(`current time: ${msNow}, wait: ${msToNextMinute}`)
-        await getPriceDelayed(browser, msToNextMinute)
 
+    let generator = getExpectedTimestamp('2019-04-29','2019-04-30')
+    let res = generator.next()
+    for(let res = generator.next(); res.done === false; res = generator.next()) {
+      let priceInfo = await getPriceDelayed(browser, 0, res.value)
+      if (priceInfo.code === -1) {
+        // there is no data for this minute, we must report it to model as well.
+        console.log(`${res.value}: no data found.`)
+        continue
+      }
+
+      let info = priceInfo.info
+      // print out the last one.
+      console.log(info.slice(info.length-1, info.length))
+      
     }
- 
+    /*
+    while (1) {
+      // check if today is working day.
+      // 
+
+      // get time delta to next minute.
+
+      msNow = Date.now()
+      msToNextMinute = 60000 - msNow % 60000
+      //msToNextMinute -= 20
+      console.log(`current time: ${msNow}, wait: ${msToNextMinute}`)
+      let result = await getPriceDelayed(browser, msToNextMinute, msNow+msToNextMinute)
+                          .catch(async e => {
+                            console.log('error')
+                            await delay(10000)
+                          })
+    }
+    */
 
     /*
     const link = await browser.$('=Logga in')
