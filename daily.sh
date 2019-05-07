@@ -44,6 +44,7 @@ git commit -m "new backup and new data"
 git push
 echo "`date` daily task finished">>${LOG_FILE}
 
-/usr/bin/python3 data-analytics/omx30-prep.py
+cd data-analytics
+/usr/bin/python3 omx30-prep.py
 
 cd ${ORI_DIR}
