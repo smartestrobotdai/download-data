@@ -1,13 +1,12 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[56]:
+# In[ ]:
 
 
 import pandas as pd
 import numpy as np
 import sys
-
 import warnings
 import math
 
@@ -15,21 +14,21 @@ df=pd.read_csv('../data/data.csv.gz', compression='gzip', sep=',')
 df['timestamp'] = pd.to_datetime(df['time_stamp'], format="%Y-%m-%d %H:%M:%S").dt.tz_convert('CET')
 
 
-# In[57]:
+# In[ ]:
 
 
 stock_delta = df['stock_id'] - df['stock_id'].shift()
 time_delta = (df['timestamp'] - df['timestamp'].shift()).fillna(10000).dt.total_seconds()
 
 
-# In[58]:
+# In[ ]:
 
 
 stock_split_index=df.index[stock_delta!=0].tolist()
 stock_split_index.append(len(df))
 
 
-# In[59]:
+# In[ ]:
 
 
 day_split_index=df.index[abs(time_delta)>36000].tolist()
@@ -37,18 +36,17 @@ day_split_index.insert(0, 0)
 day_split_index.append(len(df))
 
 
-# In[60]:
+# In[ ]:
 
 
 stock_id_list = df['stock_id'].unique().tolist()
 i = 0
 for stock_index in stock_id_list:
-    
     print("index: {}, id:{}".format(i, stock_index))
     i+=1
 
 
-# In[61]:
+# In[ ]:
 
 
 current_stock_index = 0
@@ -66,25 +64,19 @@ for i in range(len(day_split_index) - 1):
         current_stock_index += 1
 
 
-# In[62]:
+# In[ ]:
 
 
 for stock_id in range(len(stock_id_list)):
     diff = time_series_all_list[stock_id][0]['open'].diff()
 
     min_ = diff[diff>=0.005].min()
-    open_ = time_series_all_list[stock_id][0]['open'].mean()
+    open_ = time_series_all_list[stock_id][-1]['open'].mean()
 
     print("stockid:{} min={}, cost={}".format(stock_id, min_, min_/open_))
 
 
-# In[63]:
-
-
-time_series_all_list[14][0]
-
-
-# In[64]:
+# In[ ]:
 
 
 for stock_id in range(len(time_series_all_list)):
@@ -113,7 +105,8 @@ for stock_id in range(len(time_series_all_list)):
         df3['volume'].iloc[:6] = df3['volume'].iloc[6] / 6
         df3['volume'].iloc[6] = df3['volume'].iloc[6] / 6
         df3['volume'].iloc[-5:] = df3['volume'].iloc[-1]/5
-
+        
+        #TODO: FIXED ME, no nan in volume!
         
         
         df = df3.reset_index().rename({'index':'timestamp'}, axis=1)
@@ -123,6 +116,7 @@ for stock_id in range(len(time_series_all_list)):
         df['ema_10'] = df['last'].ewm(span=10, adjust=False).mean()
         df['ema_20'] = df['last'].ewm(span=20, adjust=False).mean()
         df['diff_ema_10']=(df['ema_10'].diff()[1:]/df['ema_10']).fillna(0)
+        df['volume'] = df['volume'].abs().fillna(0)
         # the first diff at 9:00 is the difference between today's open and yesterday's last.
 
         df['diff_ema_20']=(df['ema_20'].diff()[1:]/df['ema_20']).fillna(0)
@@ -141,19 +135,6 @@ for stock_id in range(len(time_series_all_list)):
 
 
 # In[ ]:
-
-
-time_series_all_list[0][1]
-
-
-# In[65]:
-
-
-columns = ['timestamp','last', 'diff_ema_20', 'value_ema_20_beta_99', 'value_ema_20_beta_98', 
-           'diff_ema_10', 'value_ema_10_beta_99', 'value_ema_10_beta_98', 'volume']
-
-
-# In[67]:
 
 
 
@@ -229,13 +210,7 @@ for day_id in range(len(time_series_all_list[0])):
         df_merged = df_merged.append(df_merged_sorted)
 
 
-# In[71]:
-
-
-df_merged
-
-
-# In[72]:
+# In[ ]:
 
 
 columns = df_merged_sorted.columns
@@ -268,7 +243,7 @@ for item in columns:
 timesteps = ['step_of_day', 'step_of_week']
 
 
-# In[73]:
+# In[ ]:
 
 
 df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_10_columns + value_ema_10_beta_98_columns + timesteps].to_csv('data-prep-ema10-beta98.csv')
