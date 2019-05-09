@@ -12,6 +12,11 @@ if [ ! -z ${DIR} ]; then
   cd ${DIR}
   echo "changing directory to ${DIR}">>${LOG_FILE}
 fi
+
+echo "starting docker containers"
+docker-compose up -d
+sleep 5
+
 echo "`date` started fetching data">>${LOG_FILE}
 echo "node version: `node -v`">>${LOG_FILE}
 export PATH=$PATH:/usr/local/bin/:/usr/bin
@@ -43,6 +48,9 @@ git add data/data.csv.gz
 git commit -m "new backup and new data"
 git push
 echo "`date` daily task finished">>${LOG_FILE}
+
+docker-compose down
+sleep 5
 
 cd data-analytics
 /usr/bin/python3 omx30-prep.py
