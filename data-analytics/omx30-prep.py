@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[ ]:
+# In[1]:
 
 
 import pandas as pd
@@ -14,21 +14,21 @@ df=pd.read_csv('../data/data.csv.gz', compression='gzip', sep=',')
 df['timestamp'] = pd.to_datetime(df['time_stamp'], format="%Y-%m-%d %H:%M:%S").dt.tz_convert('CET')
 
 
-# In[ ]:
+# In[2]:
 
 
 stock_delta = df['stock_id'] - df['stock_id'].shift()
 time_delta = (df['timestamp'] - df['timestamp'].shift()).fillna(10000).dt.total_seconds()
 
 
-# In[ ]:
+# In[3]:
 
 
 stock_split_index=df.index[stock_delta!=0].tolist()
 stock_split_index.append(len(df))
 
 
-# In[ ]:
+# In[4]:
 
 
 day_split_index=df.index[abs(time_delta)>36000].tolist()
@@ -36,7 +36,7 @@ day_split_index.insert(0, 0)
 day_split_index.append(len(df))
 
 
-# In[ ]:
+# In[5]:
 
 
 stock_id_list = df['stock_id'].unique().tolist()
@@ -46,7 +46,7 @@ for stock_index in stock_id_list:
     i+=1
 
 
-# In[ ]:
+# In[6]:
 
 
 current_stock_index = 0
@@ -64,7 +64,7 @@ for i in range(len(day_split_index) - 1):
         current_stock_index += 1
 
 
-# In[ ]:
+# In[7]:
 
 
 for stock_id in range(len(stock_id_list)):
@@ -113,18 +113,30 @@ for stock_id in range(len(time_series_all_list)):
 
         
         #df['timestamp'] = pd.to_datetime(df['time_stamp'], format="%Y-%m-%d %H:%M:%S").dt.tz_convert('Europe/Stockholm')
+        df['ema_1'] = df['last']
+        df['ema_5'] = df['last'].ewm(span=5, adjust=False).mean()
         df['ema_10'] = df['last'].ewm(span=10, adjust=False).mean()
         df['ema_20'] = df['last'].ewm(span=20, adjust=False).mean()
+        df['diff_ema_1']=(df['ema_1'].diff()[1:]/df['ema_1']).fillna(0)
+        df['diff_ema_5']=(df['ema_5'].diff()[1:]/df['ema_5']).fillna(0)
         df['diff_ema_10']=(df['ema_10'].diff()[1:]/df['ema_10']).fillna(0)
+        df['diff_ema_20']=(df['ema_20'].diff()[1:]/df['ema_20']).fillna(0)
+        
         df['volume'] = df['volume'].abs().fillna(0)
         # the first diff at 9:00 is the difference between today's open and yesterday's last.
-
-        df['diff_ema_20']=(df['ema_20'].diff()[1:]/df['ema_20']).fillna(0)
+        df['value_ema_1_beta_99'] = 0
+        df['value_ema_5_beta_99'] = 0
         df['value_ema_10_beta_99'] = 0
         df['value_ema_20_beta_99'] = 0
+        df['value_ema_1_beta_98'] = 0
+        df['value_ema_5_beta_98'] = 0
         df['value_ema_10_beta_98'] = 0
         df['value_ema_20_beta_98'] = 0
-        for iter_id in range(10):
+        for iter_id in range(20):
+            df['value_ema_1_beta_99'] = df['diff_ema_1'].shift(-1).fillna(0) +                 0.99 * df['value_ema_1_beta_99'].shift(-1).fillna(0)
+            df['value_ema_1_beta_98'] = df['diff_ema_1'].shift(-1).fillna(0) +                 0.98 * df['value_ema_1_beta_98'].shift(-1).fillna(0)
+            df['value_ema_5_beta_99'] = df['diff_ema_5'].shift(-1).fillna(0) +                 0.99 * df['value_ema_5_beta_99'].shift(-1).fillna(0)
+            df['value_ema_5_beta_98'] = df['diff_ema_5'].shift(-1).fillna(0) +                 0.98 * df['value_ema_5_beta_98'].shift(-1).fillna(0)
             df['value_ema_10_beta_99'] = df['diff_ema_10'].shift(-1).fillna(0) +                 0.99 * df['value_ema_10_beta_99'].shift(-1).fillna(0)
             df['value_ema_10_beta_98'] = df['diff_ema_10'].shift(-1).fillna(0) +                 0.98 * df['value_ema_10_beta_98'].shift(-1).fillna(0)
             df['value_ema_20_beta_99'] = df['diff_ema_20'].shift(-1).fillna(0) +                 0.99 * df['value_ema_20_beta_99'].shift(-1).fillna(0)
@@ -137,125 +149,49 @@ for stock_id in range(len(time_series_all_list)):
 # In[ ]:
 
 
+# save to csv files
+column_wanted_in_order = ['timestamp', 'last', 'volume', 
+                          'diff_ema_1', 'diff_ema_5', 
+                          'diff_ema_10', 'diff_ema_20', 
+                          'value_ema_1_beta_98', 'value_ema_1_beta_99',
+                          'value_ema_5_beta_98', 'value_ema_5_beta_99', 
+                          'value_ema_10_beta_98', 'value_ema_10_beta_99', 
+                          'value_ema_20_beta_98', 'value_ema_20_beta_99']
 
-from functools import reduce
+def add_step_columns(df):
+    df['step_of_day'] = np.arange(0, len(df))
+    day_of_week = df['timestamp'].iloc[0].weekday()
+    df['step_of_week'] = len(df) * day_of_week + df['step_of_day']
+    return df
 
-# to order the columns in the order: last1,last2...last30, diff1, diff2,...diff30, value1, value2,...value30
-def func(x):
-    if 'timestamp' in x:
-        return 0
-    num = int(x.split('_')[-1])
+csv_save_path = 'csv_files/'
+npy_save_path = 'npy_files/'
+for s_id in range(len(time_series_all_list)):
+    df_merged = time_series_all_list[s_id][0][column_wanted_in_order]
+    df_merged = add_step_columns(df_merged)
+    for day_id in range(1, len(time_series_all_list[s_id])):
+        df = time_series_all_list[s_id][day_id][column_wanted_in_order]
+        df = add_step_columns(df)
+        df_merged = df_merged.append(df)
 
-    if 'last' in x:
-        return 100 + num
-    elif 'volume' in x:
-        return 150 + num
-    elif 'diff_ema_10' in x:
-        return 200 + num
-    elif 'diff_ema_20' in x:
-        return 300 + num
-    elif 'value_ema_10_beta_98' in x:
-        return 400 + num
-    elif 'value_ema_10_beta_99' in x:
-        return 500 + num
-    elif 'value_ema_20_beta_98' in x:
-        return 600 + num
-    elif 'value_ema_20_beta_99' in x:
-        return 700 + num
-
-
-def merge(df1, df2):
-    global index
-    merged = df1.set_index('timestamp').join(df2.set_index('timestamp'), how='outer')
-    index += 1
-
-    return merged.reset_index().rename({'index':'timestamp'}, axis=1)
-
-
-columns_wanted = ['timestamp','last', 'diff_ema_20', 'value_ema_20_beta_99', 'value_ema_20_beta_98', 
-           'diff_ema_10', 'value_ema_10_beta_99', 'value_ema_10_beta_98', 'volume']
-
-for day_id in range(len(time_series_all_list[0])):
-    print("processing day: {}".format(day_id))
-    df_list = []
-    for i in range(len(stock_id_list)):
-        rename_map = {'last': 'last_' + str(i),
-                      'diff_ema_20':'diff_ema_20_' + str(i),
-                      'value_ema_20_beta_99':'value_ema_20_beta_99_' + str(i),
-                      'value_ema_20_beta_98':'value_ema_20_beta_98_' + str(i),
-                      'diff_ema_10':'diff_ema_10_' + str(i),
-                      'value_ema_10_beta_99':'value_ema_10_beta_99_' + str(i),
-                      'value_ema_10_beta_98':'value_ema_10_beta_98_'+ str(i),
-                      'volume': 'volume_' + str(i)
-                     }
-        df = time_series_all_list[i][day_id][columns_wanted].rename(rename_map, axis=1)
-        df_list.append(df)
-
-    index = 0
-    df_merged_daily = reduce(merge, df_list)
-    
-
-    
-    columns = df_merged_daily.columns.tolist()
-    columns.sort(key=func)
-    df_merged_sorted = df_merged_daily[columns]
-    
-    df_merged_sorted['step_of_day'] = np.arange(0, len(df_merged_sorted))
-    day_of_week = df_merged_sorted['timestamp'].iloc[0].weekday()
-    df_merged_sorted['step_of_week'] = len(df_merged_sorted) * day_of_week + df_merged_sorted['step_of_day']
-    
-    if day_id == 0:
-        df_merged = df_merged_sorted
-    else:
-        df_merged = df_merged.append(df_merged_sorted)
-
-
-# In[ ]:
-
-
-columns = df_merged_sorted.columns
-last_columns = []
-volume_columns = []
-diff_ema_10_columns = []
-diff_ema_20_columns = []
-value_ema_10_beta_98_columns = []
-value_ema_10_beta_99_columns = []
-value_ema_20_beta_98_columns = []
-value_ema_20_beta_99_columns = []
-for item in columns:
-    if 'last' in item:
-        last_columns.append(item)
-    elif 'volume' in item:
-        volume_columns.append(item)
-    elif 'diff_ema_10' in item:
-        diff_ema_10_columns.append(item)
-    elif 'diff_ema_20' in item:
-        diff_ema_20_columns.append(item)
-    elif 'value_ema_10_beta_98' in item:
-        value_ema_10_beta_98_columns.append(item)
-    elif 'value_ema_10_beta_99' in item:
-        value_ema_10_beta_99_columns.append(item)
-    elif 'value_ema_20_beta_98' in item:
-        value_ema_20_beta_98_columns.append(item)
-    elif 'value_ema_20_beta_99' in item:
-        value_ema_20_beta_99_columns.append(item)
-
-timesteps = ['step_of_day', 'step_of_week']
-
-
-# In[ ]:
-
-
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_10_columns + value_ema_10_beta_98_columns + timesteps].to_csv('data-prep-ema10-beta98.csv')
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_10_columns + value_ema_10_beta_99_columns + timesteps].to_csv('data-prep-ema10-beta99.csv')
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_20_columns + value_ema_20_beta_98_columns + timesteps].to_csv('data-prep-ema20-beta98.csv')
-df_merged[['timestamp'] + volume_columns + last_columns + diff_ema_20_columns + value_ema_20_beta_99_columns + timesteps].to_csv('data-prep-ema20-beta99.csv')
-
-
-# In[ ]:
-
-
-
+    for ema in (1, 5, 10, 20):
+        for beta in (99, 98):
+            print("Saving to files for stock id:{} ema:{} beta:{}".format(s_id, ema, beta))
+            npy_filename = npy_save_path + "ema{}_beta{}_{}.npy".format(ema, beta, s_id)
+            groups = df_merged.set_index('timestamp').groupby(lambda x: x.date())
+            data_list = []
+            column_list = ['step_of_day',
+                       'step_of_week',
+                       'diff_ema_{}'.format(ema), 
+                       'volume',
+                       'value_ema_{}_beta_{}'.format(ema, beta),
+                       'timestamp',
+                       'last']
+            
+            for index, df in groups:
+                np_data = df.reset_index().rename({'index':'timestamp'}, axis=1)[column_list].values
+                data_list.append(np_data)
+            np.save(npy_filename, np.array(data_list))
 
 
 # In[ ]:
