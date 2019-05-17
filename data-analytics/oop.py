@@ -451,7 +451,7 @@ class DataManipulator:
     
 
 
-# In[ ]:
+# In[507]:
 
 
 import numpy as np
@@ -613,20 +613,21 @@ class ValueModel:
         
         # do 2-layer optimizations.
         error_ema, error_mean, model, data_manipulator, strategy_model =             self.get_profit(X_list)
-        
 
-        test_profit = self.test(model, data_manipulator, strategy_model)
-        
-        # get the best profit.
         max_profit_list = strategy_model.get_max_profit_list()
+        
+        # get profit for the training period.
         avg_profit_per_day = self.get_avg_profit_per_day(max_profit_list, data_manipulator.split_daily_data)
         profit_ema_per_day = self.get_ema_profit_per_day(max_profit_list, data_manipulator.split_daily_data)
+        
+        # get the overall profit for the testing period.
+        test_profit = self.test(model, data_manipulator, strategy_model)
         
         print("FINAL RESULT: {},{},{},{},{}".format(profit_ema_per_day, avg_profit_per_day,
                                                  error_ema, error_mean , test_profit))
         
         if profit_ema_per_day > self.max_profit and profit_ema_per_day > 0:
-            print("find the new best profit:{}, error:{}".format(profit_ema_per_day, error_ema))
+            #print("find the new best profit:{}, error:{}".format(profit_ema_per_day, error_ema))
             self.max_profit = profit_ema_per_day
             self.model = model
             self.data_manipulator = data_manipulator
@@ -795,7 +796,7 @@ class ValueModel:
     
 
 
-# In[ ]:
+# In[508]:
 
 
 def print_verbose_func(verbose, msg):
@@ -803,7 +804,7 @@ def print_verbose_func(verbose, msg):
         print(msg)
 
 
-# In[ ]:
+# In[509]:
 
 
 class TradeStrategyDesc:
@@ -838,7 +839,7 @@ class TradeStrategyDesc:
                  self.max_hold_steps]]
 
 
-# In[ ]:
+# In[510]:
 
 
 from functools import partial
@@ -886,7 +887,47 @@ class StrategyModel:
         X_list = self.trade_strategy_desc.to_list()
         return self.get_total_profit(X_list, test_data)
     
-    def get_seq_profit_list(self, X_list, input_data, verbose=False):
+    def get_total_profit(self, X_list, test_data):
+        assert(len(X_list) == 1)
+        tot_profit, n_tot_trades, daily_profit_list, _, _ = self.run_test_core(X_list[0], 
+                                                                                     test_data, 
+                                                                                     verbose=True)
+        
+        print("test finished: tot_profit:{} in {} seqs".format(tot_profit,
+                                                                    len(daily_profit_list)))
+        return tot_profit
+    
+    # the input data is in shape (days, steps, [timestamp, value, price])
+    def get_profit_ema(self, X_list):
+        assert(len(X_list)==1)
+        X_list = X_list[0]
+        input_data = self.input_data[-self.ema_window*2:]
+        tot_profit, n_tot_trades, seq_profit_list,             stock_change_rate, asset_change_rate = self.run_test_core(X_list, input_data)
+            
+        profit_ema = get_ema(seq_profit_list, self.ema_window)
+        
+        profit_ema_per_step = profit_ema / self.input_data.shape[1]
+        if profit_ema_per_step > self.max_profit_ema_per_step:
+            print("find best profit_per_step: {} profit_ema:{} tot_profit:{} window:{}".format(
+                                                                            profit_ema_per_step,
+                                                                            profit_ema,
+                                                                            tot_profit,
+                                                                            self.ema_window))
+
+            self.max_profit_ema_per_step = profit_ema_per_step
+            
+            self.change_rate = np.concatenate((input_data, 
+                                              stock_change_rate,
+                                              asset_change_rate), axis=2)
+            self.trade_strategy_desc = TradeStrategyDesc(X_list,
+                                             self.ema_window,
+                                             self.optimize_data)
+            self.tot_profit = tot_profit
+            self.max_profit_list = seq_profit_list
+        
+        return np.array(profit_ema_per_step).reshape((1,1))
+    
+    def run_test_core(self, X_list, input_data, verbose=False):
         print_verbose = partial(print_verbose_func, verbose)
 
         buy_threshold = X_list[0]
@@ -968,45 +1009,7 @@ class StrategyModel:
         return tot_profit, n_tot_trades, daily_profit_list, stock_change_rate, asset_change_rate
     
     
-    def get_total_profit(self, X_list, test_data):
-        assert(len(X_list) == 1)
-        tot_profit, n_tot_trades, daily_profit_list, _, _ = self.get_seq_profit_list(X_list[0], 
-                                                                                     test_data, 
-                                                                                     verbose=True)
-        
-        print("test finished: tot_profit:{} in {} seqs".format(tot_profit,
-                                                                    len(daily_profit_list)))
-        return tot_profit
-    
-    # the input data is in shape (days, steps, [timestamp, value, price])
-    def get_profit_ema(self, X_list):
-        assert(len(X_list)==1)
-        X_list = X_list[0]
-        input_data = self.input_data[-self.ema_window*2:]
-        tot_profit, n_tot_trades, seq_profit_list,             stock_change_rate, asset_change_rate = self.get_seq_profit_list(X_list, input_data)
-            
-        profit_ema = get_ema(seq_profit_list, self.ema_window)
-        
-        profit_ema_per_step = profit_ema / self.input_data.shape[1]
-        if profit_ema_per_step > self.max_profit_ema_per_step:
-            print("find best profit_per_step: {} profit_ema:{} tot_profit:{} window:{}".format(
-                                                                            profit_ema_per_step,
-                                                                            profit_ema,
-                                                                            tot_profit,
-                                                                            self.ema_window))
 
-            self.max_profit_ema_per_step = profit_ema_per_step
-            
-            self.change_rate = np.concatenate((input_data, 
-                                              stock_change_rate,
-                                              asset_change_rate), axis=2)
-            self.trade_strategy_desc = TradeStrategyDesc(X_list,
-                                             self.ema_window,
-                                             self.optimize_data)
-            self.tot_profit = tot_profit
-            self.max_profit_list = seq_profit_list
-        
-        return np.array(profit_ema_per_step).reshape((1,1))
     
     
     def get_max_profit_list(self):
@@ -1034,7 +1037,7 @@ class StrategyModel:
 
 
 value_model = ValueModel('Nordea', 5, 60)
-value_model.optimize(is_test=False)
+value_model.optimize(is_test=True)
 
 
 # In[ ]:
