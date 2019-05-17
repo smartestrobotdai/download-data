@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[2]:
+# In[ ]:
 
 
 import numpy as np
@@ -10,9 +10,10 @@ import copy
 from sklearn import preprocessing
 import datetime
 import pickle
+import os.path
 
 
-# In[3]:
+# In[ ]:
 
 
 def sma(data, window):
@@ -34,7 +35,7 @@ def get_ema(data, window):
     return current_ema
 
 
-# In[4]:
+# In[ ]:
 
 
 class NetAttributes:
@@ -57,7 +58,7 @@ class NetAttributes:
         self.n_inputs = n_inputs
 
 
-# In[5]:
+# In[ ]:
 
 
 class NetStates:
@@ -67,7 +68,7 @@ class NetStates:
     
 
 
-# In[6]:
+# In[ ]:
 
 
 class StatefulLstmModel:
@@ -248,15 +249,14 @@ class StatefulLstmModel:
         return path + 'net_attributes.pkl'
     
     def get_path(self, path, date):
-        if path[-1] != '/':
-            path += '/'
-        return path + date + '/'
+        return os.path.join(path, date)
+
     
     def get_states_filename(self, path, date):
-        return self.get_path(path, date) + 'net_states.pkl'
+        return os.path.join(self.get_path(path, date), 'net_states.pkl')
     
     def get_model_filename(self, path, date):
-        return self.get_path(path, date) + '/tf_session.ckpt'
+        return os.path.join(self.get_path(path, date),'tf_session.ckpt')
     
     def save(self, path, date):
         saver = tf.train.Saver()
@@ -277,7 +277,7 @@ class StatefulLstmModel:
             self.net_attributes = pickle.load(f)
 
         # restore states
-        with open(self.get_states_filename(path), 'rb') as f:
+        with open(self.get_states_filename(path, date), 'rb') as f:
             self.net_states = pickle.load(f)
         
         # 2. restore graph
@@ -288,11 +288,11 @@ class StatefulLstmModel:
         # 3. restore session
         saver = tf.train.Saver()
         self.sess = tf.Session()
-        saver.restore(self.sess, self.get_model_filename(path))
+        saver.restore(self.sess, self.get_model_filename(path, date))
         print("Model restored.")
 
 
-# In[7]:
+# In[ ]:
 
 
 class TimeFormat:
@@ -301,8 +301,11 @@ class TimeFormat:
     WEEK = 2
 
 class DataManipulator:
-    def __init__(self, beta, ema, time_format, volume_input, use_centralized_bid, 
+    def __init__(self,  n_learning_days,
+                n_prediction_days, beta, ema, time_format, volume_input, use_centralized_bid, 
                 split_daily_data, n_training_days):
+        self.n_learning_days = n_learning_days
+        self.n_prediction_days = n_prediction_days
         self.beta = beta
         self.ema = ema
         self.time_format = time_format
@@ -310,9 +313,27 @@ class DataManipulator:
         self.use_centralized_bid = use_centralized_bid
         self.split_daily_data = split_daily_data
         self.n_training_days = n_training_days
+        self.last_learning_date = None
+        self.next_prediction_seq = None
+        self.next_learning_seq = None
+        
+        if split_daily_data == True:
+            self.n_learning_seqs = self.n_learning_days * 2
+            self.n_prediction_seqs = self.n_prediction_days * 2
+        else:
+            self.n_learning_seqs = self.n_learning_days
+            self.n_prediction_seqs = self.n_prediction_days
+        
         self.scaler_input = None
         self.scaler_output = None
-        
+    
+    def update(self, next_prediction_seq, last_learning_date):
+        assert(last_learning_date != None)
+        print("updating, next_prediction_seq={}, last_learning_date={}".format(next_prediction_seq, last_learning_date))
+        self.next_prediction_seq = next_prediction_seq
+        self.next_learning_seq = next_prediction_seq - self.n_learning_seqs
+        self.last_learning_date = last_learning_date
+    
     def volume_transform(self, volume_series):
         # all the volumes must bigger than 0
         assert(np.all(volume_series>=0))
@@ -321,13 +342,30 @@ class DataManipulator:
     def inverse_transform_output(self, scaled_outputs):
         ori_shape = scaled_outputs.shape
         outputs_reshaped = scaled_outputs.reshape((ori_shape[0]*ori_shape[1], 
-                                                   ori_shape[2]))
+                                                   1))
         #outputs = np.exp(self.scaler_output.inverse_transform(outputs_reshaped)) - 1
         outputs = self.scaler_output.inverse_transform(outputs_reshaped)
         return outputs.reshape(ori_shape)
     
+    def transform(self, data, n_inputs, n_outputs):
+        input_scaled = self.transform_input(data[:,:,:n_inputs])
+        output_scaled = self.transform_output(data[:,:,-n_outputs:])
+        return input_scaled, output_scaled
     
-    def transform(self, data_all, n_inputs, n_outputs):
+    def transform_input(self, data_input):
+        return self.transform_helper(self.scaler_input, data_input)
+    
+    def transform_output(self, data_output):
+        return self.transform_helper(self.scaler_output, data_output)
+        
+    def transform_helper(self, scaler, data):
+        shape = data.shape
+        data = data.reshape(shape[0]*shape[1],shape[2])
+        data_scaled = scaler.transform(data)
+        return data_scaled.reshape(shape)
+    
+    # do fit and transform at same time
+    def fit_transform(self, data_all, n_inputs, n_outputs):
         orig_shape = data_all.shape
         data_train_reshape = data_all.astype('float').reshape((orig_shape[0] * orig_shape[1], orig_shape[2]))
         
@@ -346,10 +384,8 @@ class DataManipulator:
         
         return data_train_input, data_train_output
 
-    def prep_test_data(self, input_path):
-        return
-    
-    def prep_training_data(self, input_path, stock_index):
+    # to purge data based on parameters like time_input, split_daily_data, etc.
+    def purge_data(self, input_path, stock_index):
         # load numpy file
         npy_file_name = input_path + "/ema{}_beta{}_{}.npy".format(self.ema, self.beta, stock_index)
         input_np_data = np.load(npy_file_name, allow_pickle=True)
@@ -398,40 +434,24 @@ class DataManipulator:
                                                   shape[2]))
             # get the first date and last date
             n_training_sequences *= 2
-            
-        # to scale the data, but not the timestamp and price
-        data_train_input, data_train_output = self.transform(input_np_data[:n_training_sequences,:,:-2], len(input_columns), 1)
-        return data_train_input, data_train_output, input_np_data[:n_training_sequences,:,-2], input_np_data[:n_training_sequences,:,-1]
-
-
-# In[8]:
-
-
-class StrategyDesc:
-    def __init__(self, 
-                 buy_threshold,
-                 sell_threshold,
-                 stop_loss,
-                 stop_gain,
-                 min_hold_steps):
-        self.buy_threshold = buy_threshold
-        self.sell_threshold = sell_threshold
-        self.stop_loss = stop_loss
-        self.stop_gain = stop_gain
-        self.min_hold_steps = min_hold_steps
         
-    def get_parameter_str(self):
-        s = "buy_threshold:{} sell_threshold:{} stop_loss:{}             stop_gain:{} min_hold_steps:{}".format(self.buy_threshold,
-                                                  self.sell_threshold,
-                                                  self.stop_loss,
-                                                  self.stop_gain,
-                                                  self.min_hold_steps)
-        return s
+        return input_np_data, n_training_sequences, input_columns
     
+    def prep_training_data(self, input_path, stock_index):
+        input_np_data, n_training_sequences, input_columns = self.purge_data(input_path, stock_index)
+        # to scale the data, but not the timestamp and price
+        data_train_input, data_train_output = self.fit_transform(input_np_data[:n_training_sequences,:,:-2], len(input_columns), 1)
+        return data_train_input, data_train_output, input_np_data[:n_training_sequences,:,-2], input_np_data[:n_training_sequences,:,-1]
+    
+    def prep_testing_data(self, input_path, stock_index):
+        input_np_data, n_training_sequences, input_columns = self.purge_data(input_path, stock_index)
+        test_start_seq = self.next_prediction_seq - self.n_learning_seqs
+        data_test_input, data_test_output = self.transform(input_np_data[test_start_seq:,:,:-2], len(input_columns), 1)
+        return data_test_input, data_test_output, input_np_data[test_start_seq:,:,-2], input_np_data[test_start_seq:,:,-1]
     
 
 
-# In[23]:
+# In[ ]:
 
 
 import numpy as np
@@ -503,7 +523,9 @@ class ValueModel:
     def get_data_prep_desc_filename(self, path):
         return path + '/data_prep_desc.pkl'
     
-    def optimize(self, input_csv_path, max_iter=300, is_test=False):
+
+    
+    def optimize(self, max_iter=300, is_test=False):
         if is_test == True:
             mixed_domain = self.mixed_domain_test
         else:
@@ -511,61 +533,166 @@ class ValueModel:
         
         opt_handler = GPyOpt.methods.BayesianOptimization(f=self.opt_func,  # Objective function       
                                      domain=mixed_domain,          # Box-constraints of the problem
-                                     initial_design_numdata = 20,   # Number data initial design
+                                     initial_design_numdata = 30,   # Number data initial design
                                      acquisition_type='EI',        # Expected Improvement
-                                     exact_feval = True)           # True evaluations, no sample noise
+                                     exact_feval = True, 
+                                     maximize = True)           # True evaluations, no sample noise
         opt_handler.run_optimization(max_iter, eps=0)
     
+    def get_data_manipulator_filename(self):
+        return os.path.join(self.save_path, 'data_manipulator.pkl')
+    
+
+    
     def save(self):
-        self.model.save(self.save_path, self.last_training_date)
+        # what is the last training date?
+        self.model.save(self.save_path, self.data_manipulator.last_learning_date)
         
-    def load(self):
+        # save the data_manipulator
+        filename = self.get_data_manipulator_filename()
+        with open(filename, 'wb') as f:
+            pickle.dump(self.data_manipulator, f, pickle.HIGHEST_PROTOCOL)
+        
+        # save the strategy model
+        self.strategy_model.save(self.save_path)
+    
+    
+    def get_latest_dir(self, save_path):
+        all_subdirs = [d for d in os.listdir(save_path) if os.path.isdir(os.path.join(save_path, d))]
+        max_time = 0
+        for dirname in all_subdirs:
+            fullname = os.path.join(save_path, dirname)
+            time = os.path.getmtime(fullname)
+            if time > max_time:
+                max_time = time
+                result = dirname
+        return result
+
+        
+    def load(self, load_date=None):
         save_path = self.save_path
+        # iterate the path, and find out the latest date as last_training_date
+        self.model = StatefulLstmModel()
         
-        # iterate the path, and find out the latest date
+        # get the latest directory
+        if load_date == None:
+            load_date = self.get_latest_dir(self.save_path)
         
+        print("Loading model for date: {}".format(load_date))
+        self.model.load(self.save_path, load_date)
+        
+        # load data manipulator
+        with open(self.get_data_manipulator_filename(), 'rb') as f:
+            self.data_manipulator = pickle.load(f)
+        
+        # load strategy
+        self.strategy_model = StrategyModel()
+        self.strategy_model.load(self.save_path)
+        print("Model loaded!")
+        
+    def get_avg_profit_per_day(self, profit_list, split_daily_data):
+        profit_per_seq = sum(profit_list)/len(profit_list)
+        if split_daily_data == True:
+            return ((1+profit_per_seq)**2) - 1 
+        else:
+            return profit_per_seq
+        
+    def get_ema_profit_per_day(self, profit_list, split_daily_data):
+        window = int(len(profit_list)/2)
+        ema_profit_per_seq = get_ema(profit_list, window)
+        
+        if split_daily_data == True:
+            return ((1+ema_profit_per_seq)**2) - 1 
+        else:
+            return ema_profit_per_seq
     
     def opt_func(self, X_list):
         assert(len(X_list)==1)
-        answer = np.zeros((X_list.shape[0], 1))
-        for i in range(len(X_list)):
-            print(self.get_parameter_str(X_list[i]))
-            features = X_list[i]
-            error, model, value_price = self.get_value_result(features)
+        X_list = X_list[0]
+        print(self.get_parameter_str(X_list))
+        
+        # do 2-layer optimizations.
+        error_ema, error_mean, model, data_manipulator, strategy_model =             self.get_profit(X_list)
+        
+
+        test_profit = self.test(model, data_manipulator, strategy_model)
+        
+        # get the best profit.
+        max_profit_list = strategy_model.get_max_profit_list()
+        avg_profit_per_day = self.get_avg_profit_per_day(max_profit_list, data_manipulator.split_daily_data)
+        profit_ema_per_day = self.get_ema_profit_per_day(max_profit_list, data_manipulator.split_daily_data)
+        
+        print("FINAL RESULT: {},{},{},{},{}".format(profit_ema_per_day, avg_profit_per_day,
+                                                 error_ema, error_mean , test_profit))
+        
+        if profit_ema_per_day > self.max_profit and profit_ema_per_day > 0:
+            print("find the new best profit:{}, error:{}".format(profit_ema_per_day, error_ema))
+            self.max_profit = profit_ema_per_day
+            self.model = model
+            self.data_manipulator = data_manipulator
+            self.strategy_model = strategy_model
+            #self.test()
+            self.save()
+ 
             
-            strategy_model = StrategyModel()
-            strategy_model.optimize(value_price)
-            profit, is_hold = strategy_model.get_best_result()
-            print("total profit={},  error={}".format(profit, error))
-            #self.draw_step_profit_graph(self.step_profit_list, "step_profit_{}".format(answer[i][0]))
-            #self.step_profit_list = []
-            if profit > self.max_profit:
-                strategy_desc = strategy_model.get_strategy_desc()
-                
-                print("find new opt:{}, {}, {}".format(profit, 
-                                                   self.get_parameter_str(X_list[i]),
-                                                   strategy_desc.get_parameter_str()))
-                self.model = model
-                self.save()
-                self.max_profit = profit
-                
-                strategy_model.save(self.save_path)
-                
-                
-                # save the data into file for further analysis
-                np_data_to_save = np.concatenate((value_price, is_hold), axis=2)
-                print("np_data_to_save")
-                print(np_data_to_save.shape)
-                np.save(self.save_path + '/best_policy_data.npy', np_data_to_save)
-                
-                # check the optimized strategy for this model
-            answer[i][0] = -profit
-        return answer
+        return np.array(profit_ema_per_day).reshape((1,1))
 
+    def test(self, model, data_manipulator, strategy_model):        
+        data_testing_input, data_testing_output, timestamps, price             = data_manipulator.prep_testing_data('npy_files', self.stock_index)
+        
+        # first make a prediction, then do training.
+        n_learning_seqs = data_manipulator.n_learning_seqs
+        n_prediction_seqs = data_manipulator.n_prediction_seqs
+        
+        prediction_start = n_learning_seqs - n_prediction_seqs
+        prediction_end = prediction_start + n_prediction_seqs
+        
+        print("starting the first prediction from seq:{} to seq:{}".format(prediction_start, prediction_end-1))
+        outputs = model.predict_and_verify(data_testing_input[prediction_start:prediction_end], 
+                    data_testing_output[prediction_start:prediction_end])
+        
+        print("outputs")
+        print(outputs.shape)
+        shape = outputs.shape
+        assert(shape[2]==1)
+        outputs = outputs.reshape((shape[0],shape[1]))
+        np_values, np_errors, next_prediction_seq = self.run_model(model, 
+                                                                  data_testing_input, 
+                                                                  data_testing_output, 
+                                                                  n_learning_seqs, 
+                                                                  n_prediction_seqs)
+        
+        
+        
+        last_learning_date = self.get_date(timestamps, next_prediction_seq-1)
+        data_manipulator.update(next_prediction_seq, last_learning_date)
+        print("timestamps")
+        print(timestamps[prediction_start:].shape)
+        print(outputs.shape)
+        print(np_values.shape)
+        print(price[prediction_start:].shape)
+        
+        outputs = np.concatenate((outputs, np_values), axis=0)
+        outputs = data_manipulator.inverse_transform_output(outputs)
+        strategy_data_input = np.stack((timestamps[prediction_start:], 
+                                outputs,
+                                price[prediction_start:]), axis=2)
+        tot_profit = 1
+        for i in range(0, len(strategy_data_input), n_prediction_seqs):
+            start = i
+            end = min(i+n_prediction_seqs, len(strategy_data_input))
+            result = strategy_model.run_test(strategy_data_input[start:end])
+            tot_profit *= result
+            strategy_model.append_data(strategy_data_input[start:end])
+            strategy_model.optimize()
+        
+        #print("test finished, total profit: {} in {} seqs".format(tot_profit, len(strategy_data_input)))
+        return tot_profit
+    
+    def get_date(self, timestamps, seq_no):
+        return timestamps[seq_no][0].date().strftime("%y%m%d")
 
-    
-    
-    def get_value_result(self, features):
+    def get_profit(self, features):
         n_neurons = int(features[0])
         learning_rate = features[1]
         num_layers = int(features[2])
@@ -580,104 +707,141 @@ class ValueModel:
         use_centralized_bid = int(features[11])
         split_daily_data = int(features[12])
         
-        assert((self.n_training_days - learning_period) % prediction_period == 0)
-        data_manipulator = DataManipulator(beta, ema, 
+        data_manipulator = DataManipulator(learning_period,
+                                           prediction_period,
+                                           beta, ema, 
                                            time_format, 
                                            volume_input, 
                                            use_centralized_bid, 
                                            split_daily_data, 
                                            self.n_training_days)
-        npy_path = 'npy_files'
-        data_training_input, data_training_output, timestamps, price             = data_manipulator.prep_training_data(npy_path, self.stock_index)
         
-        # get the date list.
-        date_list = []
-        for i in range(len(timestamps)):
-            date = timestamps[i][0].strftime("%y%m%d")
-            date_list.append(date)
+        data_training_input, data_training_output, timestamps, price             = data_manipulator.prep_training_data('npy_files', self.stock_index)
         
-
-        
-        # now define the network
         model = StatefulLstmModel(n_neurons, learning_rate, num_layers, rnn_type, n_repeats)
         
-        assert(self.n_training_days % prediction_period == 0)
+        n_learning_seqs = data_manipulator.n_learning_seqs
+        n_prediction_seqs = data_manipulator.n_prediction_seqs
         
-        n_training_seq = self.n_training_days
-        n_learning_seq = learning_period
-        n_prediction_seq = prediction_period
-        if split_daily_data == 1:
-            n_training_seq *= 2
-            n_learning_seq *= 2
-            n_prediction_seq *= 2
+        np_values, np_errors, next_prediction_seq = self.run_model(model, data_training_input, data_training_output, 
+                                            n_learning_seqs, n_prediction_seqs)
+        
+        last_learning_date = self.get_date(timestamps, next_prediction_seq-1)
+        data_manipulator.update(next_prediction_seq, last_learning_date)
+       
+        daily_errors = np.mean(np_errors, axis=1)
+        print("daily_errors")
+        print(daily_errors.shape)
+        error_ema = get_ema(daily_errors, int(len(daily_errors)/2))
+        assert(len(daily_errors) != 0)
+        error_mean = np.sum(daily_errors)/len(daily_errors)
+        # find the best trade strategy.
+        # prepare data for the strategy optimization, including timestamp, value, price.
+        np_values = data_manipulator.inverse_transform_output(np_values)
+        strategy_data_input = np.stack((timestamps[n_learning_seqs:], 
+                                        np_values, 
+                                        price[n_learning_seqs:]), axis=2)
+        print("strategy_data_input")
+        print(strategy_data_input.shape)
+        ema_window = int(strategy_data_input.shape[0]/2)
+        strategy_model = StrategyModel(ema_window)
+        strategy_model.append_data(strategy_data_input)
+        strategy_model.optimize()
+        return error_ema, error_mean, model, data_manipulator, strategy_model
+    
+    
+    # run the model, do learning and prediction at same time, 
+    # this will be used for both training and testing.
+    # at the test phase, we should do prediction first
+    def run_model(self, model, data_input, data_output, n_learning_seqs, n_prediction_seqs):
+        # get the date list.
+        n_training_seqs = len(data_input)
+        errors = None
+        all_outputs = None
+        n_tot_prediction_seqs = 0
+        print("start training: training_seq:{}, learning_seq:{}, prediction_seq:{}".format(n_training_seqs, 
+                                                                                           n_learning_seqs, 
+                                                                                           n_prediction_seqs,
+                                                                                          ))
+        for i in range(0, n_training_seqs-n_learning_seqs+1, n_prediction_seqs):
+            learning_end = i + n_learning_seqs
+            print("start training from seq:{} - seq:{}".format(i, learning_end-1))
+            model.fit(data_input[i:learning_end], data_output[:learning_end], n_prediction_seqs)
+            next_prediction_seq = learning_end
+            prediction_end = min(learning_end+n_prediction_seqs, len(data_input))
             
-        self.last_training_date = date_list[-1]
-        daily_errors = []
-        all_outputs = []
-        print("start training: training_seq:{}, learning_seq:{}, prediction_seq:{} last_training_date:{}".format(n_training_seq, 
-                                                                                           n_learning_seq, 
-                                                                                           n_prediction_seq,
-                                                                                           self.last_training_date))
-        for i in range(0, n_training_seq-n_learning_seq+1, n_prediction_seq):
-            learning_end = i + n_learning_seq
-            print("start training from seq:{}({}) - seq:{}({})".format(i, date_list[i], learning_end-1, date_list[learning_end-1]))
-            model.fit(data_training_input[i:learning_end], data_training_output[:learning_end], n_prediction_seq)
-            prediction_end = learning_end + n_prediction_seq
-            if prediction_end > n_training_seq:
+            if prediction_end <= learning_end:
                 break
             
-            print("start predicting from seq:{}({}) - seq:{}({})".format(learning_end, date_list[learning_end], 
-                                                                       prediction_end-1, date_list[prediction_end-1]))
+            print("start predicting from seq:{} - seq:{}".format(learning_end, 
+                                                                       prediction_end-1))
             
-            outputs = model.predict_and_verify(data_training_input[learning_end:prediction_end], 
-                                     data_training_output[learning_end:prediction_end])
+            outputs = model.predict_and_verify(data_input[learning_end:prediction_end], 
+                                     data_output[learning_end:prediction_end])
             print("output.shape")
             print(outputs.shape)
-            all_outputs.append(outputs)
-            # calculate the error for every day
-            y = data_training_output[learning_end:prediction_end]
+            y = data_output[learning_end:prediction_end]
             # error is a 1-D array for the every day error
-            error = np.mean(np.square(outputs-y), axis=(1,2))
-        
-            daily_errors += error.tolist()
+            error = np.square(outputs-y)
             
-        np_all_outputs = np.array(all_outputs)
-        print("np_all_outputs.shape")
-        print(np_all_outputs.shape)
-        shape = np_all_outputs.shape
-        
-        n_predicted_days = self.n_training_days - learning_period
-        if split_daily_data == 1:
-            steps_per_day = data_training_input.shape[1] * 2
-        else:
-            steps_per_day = data_training_input.shape[1]
-        
-        
-        np_all_outputs = np_all_outputs.reshape((n_predicted_days, steps_per_day,1))
-        np_all_outputs = data_manipulator.inverse_transform_output(np_all_outputs)
-        
-        print("np_all_outputs.shape")
-        print(np_all_outputs.shape)
-        shape = timestamps.shape
-        timestamps = timestamps.reshape((self.n_training_days, steps_per_day, 1))
-        price = price.reshape((self.n_training_days, steps_per_day, 1))
-        
-        print("timestamps.shape")
-        print(timestamps.shape)
-        value_with_timestamp_price = np.concatenate((timestamps[learning_period:],
-                                               np_all_outputs,
-                                               price[learning_period:]), axis=2)
-        print("value_with_timestamp_price")
-        print(value_with_timestamp_price.shape)
-        ema = get_ema(daily_errors, int(len(daily_errors)/2))
-        print("test finished, the ema of testing error:{}".format(ema))
-        
-        return ema, model, value_with_timestamp_price
+            n_tot_prediction_seqs += outputs.shape[0]
+            if i == 0:
+                all_outputs = outputs
+                errors = error
+            else:
+                all_outputs = np.concatenate((all_outputs, outputs), axis=0)
+                errors = np.concatenate((errors, error), axis=0)
+        return np.squeeze(all_outputs), np.squeeze(errors), next_prediction_seq
     
 
 
-# In[26]:
+# In[ ]:
 
+
+def print_verbose_func(verbose, msg):
+    if verbose == True:
+        print(msg)
+
+
+# In[ ]:
+
+
+class TradeStrategyDesc:
+    def __init__(self,
+                 X_list,
+                 ema_window,
+                 optimize_data):
+        self.buy_threshold = X_list[0]
+        self.sell_threshold = X_list[1]
+        self.stop_loss = X_list[2]
+        self.stop_gain = X_list[3]
+        self.min_hold_steps = X_list[4]
+        self.max_hold_steps = X_list[5]
+        self.ema_window = ema_window
+        self.optimize_data = optimize_data
+        
+    def get_parameter_str(self):
+        s = "buy_threshold:{} sell_threshold:{} stop_loss:{}             stop_gain:{} min_hold_steps:{} max_hold_steps:{} ema_window:{} optimize_data:{}".format(self.buy_threshold,
+                                                  self.sell_threshold,
+                                                  self.stop_loss,
+                                                  self.stop_gain,
+                                                  self.min_hold_steps,
+                                                  self.max_hold_steps,
+                                                  self.ema_window,
+                                                  self.optimize_data.shape)
+        return s
+    
+    
+    def to_list(self):
+        return [[self.buy_threshold, self.sell_threshold, self.stop_loss, self.stop_gain, 
+                 self.min_hold_steps,
+                 self.max_hold_steps]]
+
+
+# In[ ]:
+
+
+from functools import partial
 
 class StrategyModel:
     mixed_domain = [{'name': 'buy_threshold', 'type': 'continuous', 'domain': (0.0, 0.005)},
@@ -685,138 +849,198 @@ class StrategyModel:
                  {'name': 'stop_loss', 'type': 'continuous', 'domain': (-0.01,-0.003)},
                  {'name': 'stop_gain', 'type': 'continuous', 'domain': (0.002, 0.01)},
                  {'name': 'min_hold_steps', 'type': 'discrete', 'domain': range(10,100)},
+                 {'name': 'max_hold_steps', 'type': 'discrete', 'domain': range(50,200)},
          ]
-    def __init__(self):
+    def __init__(self, ema_window=None):
         self.max_profit = -999.0
         self.strategy_desc = None
+        self.ema_window = ema_window
+        self.optimize_data = None
+        self.tot_profit = None
         return
+    
+    # append the data for the optimization
+    def append_data(self, data):
+        if self.optimize_data is None:
+            self.optimize_data = data
+        else:
+            self.optimize_data = np.concatenate((self.optimize_data, data), axis=0)
 
-    def optimize(self, input_data):
-        self.input_data = input_data
-        
-        myBopt = GPyOpt.methods.BayesianOptimization(self.get_profit,  # Objective function       
+    def optimize(self):
+        self.trade_strategy_desc = None
+        self.max_profit_ema_per_step = -999.0
+        self.input_data = self.optimize_data
+        myBopt = GPyOpt.methods.BayesianOptimization(self.get_profit_ema,  # Objective function       
                                              domain=self.mixed_domain,          # Box-constraints of the problem
                                              initial_design_numdata = 30,   # Number data initial design
                                              acquisition_type='EI',        # Expected Improvement
                                              exact_feval = True,
                                              maximize = True)           # True evaluations, no sample noise
 
-        myBopt.run_optimization(300,eps=0)
+        myBopt.run_optimization(150,eps=0)
+        self.input_data = None
         return 0
-        
-    # the input data is in shape (days, steps, [timestamp, value, price])
-    def get_profit(self, X_list):
-        assert(len(X_list)==1)
-        buy_threshold = X_list[0][0]
-        sell_threshold = X_list[0][1]
-        stop_loss = X_list[0][2]
-        stop_gain = X_list[0][3]
-        min_hold_steps = int(X_list[0][4])
+    
+    def run_test(self, test_data):
+        print("starting test: {}".format(self.trade_strategy_desc.get_parameter_str()))
+        X_list = self.trade_strategy_desc.to_list()
+        return self.get_total_profit(X_list, test_data)
+    
+    def get_seq_profit_list(self, X_list, input_data, verbose=False):
+        print_verbose = partial(print_verbose_func, verbose)
+
+        buy_threshold = X_list[0]
+        sell_threshold = X_list[1]
+        stop_loss = X_list[2]
+        stop_gain = X_list[3]
+        min_hold_steps = int(X_list[4])
+        max_hold_steps = int(X_list[5])
         tot_profit = 1
         tot_stock_profit = 1
         buy_step = None
         max_trades = 3
-        cost = 0.00015
+        cost = 0.00015/2
         n_tot_trades = 0
-        
         # to prepare the result data
-        shape = self.input_data.shape
-        is_hold = np.zeros((shape[0], shape[1], 1))
+        shape = input_data.shape
+
+        reshaped_price = input_data[:,:,2].reshape((shape[0]*shape[1]))
+        
+        stock_change_rate = np.diff(reshaped_price) / reshaped_price[:-1]
+        stock_change_rate = np.concatenate(([0], stock_change_rate)).reshape((shape[0],shape[1],1))
+        
+        asset_change_rate = np.zeros((stock_change_rate.shape))
+        
+        
         daily_profit_list = []
-        for day_idx in range(len(self.input_data)):
-            #print("starting day {}".format(day_idx))
+        
+        for day_idx in range(len(input_data)):
+            print_verbose("starting day {}".format(day_idx))
             n_trades = 0
             daily_profit = 1
+            trade_profit = 1
             state = 0
-            daily_data = self.input_data[day_idx]
+            daily_data = input_data[day_idx]
+            hold_steps = 0
             for step in range(len(daily_data)):
+                time = daily_data[step][0]
                 value = daily_data[step][1]
                 price = daily_data[step][2]
-                time = daily_data[step][0]
-                
-                if state == 0 and time.time().hour >= 9 and                     n_trades < max_trades and step < len(daily_data)-min_hold_steps:
-                    if value > buy_threshold:
-                        buy_price = price
-                        buy_step = step
-                        #print("buy at step {} price:{}".format(step, price))
+                change_rate = stock_change_rate[day_idx][step][0]
+                if state == 0 and time.time().hour >= 9 and                     n_trades < max_trades and step < len(daily_data)-min_hold_steps and                     value > buy_threshold:
                         state = 1
-
+                        asset_change_rate[day_idx][step][0] = -cost
+                        tot_profit *= (1-cost)
+                        daily_profit *= (1-cost)
+                        trade_profit *= (1-cost)
+                        print_verbose("buy at step: {} price:{}".format(step, price))
                 elif state == 1:
-                    profit = (price - buy_price)/buy_price
                     if (value < sell_threshold and 
-                        step - buy_step > min_hold_steps) or step == len(daily_data)-1 or \
-                        profit < stop_loss or \
-                        profit > stop_gain:
-                        
-                        if profit < stop_loss:
+                        hold_steps > min_hold_steps) or step == len(daily_data)-1 or \
+                        trade_profit-1 < stop_loss or \
+                        trade_profit-1 > stop_gain or \
+                        hold_steps >= max_hold_steps:
+                        # don't do more trade today!
+                        if trade_profit-1 < stop_loss:
+                            print_verbose("stop loss stop trading!")
                             n_trades = max_trades
-                        
-                        #print("sell at step {} price:{}".format(step, price))
-                        profit -= cost
-                        tot_profit *= (1+profit)
-                        daily_profit *= (1 + profit)
+
+                        change_rate = (1+change_rate)*(1-cost)-1 
+                        tot_profit *= (1 + change_rate)
+                        daily_profit *= (1 + change_rate)
                         state = 0
                         n_trades += 1
-                
-                if state == 1:
-                    is_hold[day_idx][step] = 1
-                else:
-                    is_hold[day_idx][step] = 0
+                        print_verbose("sell at step: {} price:{} trade_profit:{} hold_steps:{}".format(step, price, trade_profit, hold_steps))
+                        trade_profit = 1
+                        asset_change_rate[day_idx][step] = change_rate
+                        hold_steps = 0
+                        
+                    else:
+                        tot_profit *= (1+change_rate)
+                        daily_profit *= (1+change_rate)
+                        trade_profit *= (1+change_rate)
+                        asset_change_rate[day_idx][step][0] = change_rate
+                        hold_steps += 1
+            print_verbose("finished day {}, daily profit:{}".format(day_idx,daily_profit))
             daily_profit_list.append(daily_profit - 1)
             n_tot_trades += n_trades
-            last = daily_data[-1][2]
-            open = daily_data[0][2]
-            stock_profit = (last - open) / open
-            tot_stock_profit *= (1+stock_profit)
+    
+        return tot_profit, n_tot_trades, daily_profit_list, stock_change_rate, asset_change_rate
+    
+    
+    def get_total_profit(self, X_list, test_data):
+        assert(len(X_list) == 1)
+        tot_profit, n_tot_trades, daily_profit_list, _, _ = self.get_seq_profit_list(X_list[0], 
+                                                                                     test_data, 
+                                                                                     verbose=True)
         
-            #print("finishing day {}, daily_profit:{}".format(day_idx, daily_profit))
-        #print("{}, n_tot_trades:{} profit:{}".format(X_list, n_tot_trades, tot_profit))
-        window = int(len(daily_profit_list)/2)
-        profit_ema = get_ema(daily_profit_list, window)
-        if profit_ema > self.max_profit:
-            print("find best profit ema:{} tot_profit:{} in days:{}".format(profit_ema, 
-                                                                            tot_profit,
-                                                                            window*2))
+        print("test finished: tot_profit:{} in {} seqs".format(tot_profit,
+                                                                    len(daily_profit_list)))
+        return tot_profit
+    
+    # the input data is in shape (days, steps, [timestamp, value, price])
+    def get_profit_ema(self, X_list):
+        assert(len(X_list)==1)
+        X_list = X_list[0]
+        input_data = self.input_data[-self.ema_window*2:]
+        tot_profit, n_tot_trades, seq_profit_list,             stock_change_rate, asset_change_rate = self.get_seq_profit_list(X_list, input_data)
             
-            self.max_profit = profit_ema
-            self.is_hold = is_hold
-            self.strategy_desc = StrategyDesc(buy_threshold,
-                                             sell_threshold,
-                                             stop_loss,
-                                             stop_gain,
-                                             min_hold_steps)
+        profit_ema = get_ema(seq_profit_list, self.ema_window)
         
-        return np.array(profit_ema).reshape((1,1))
+        profit_ema_per_step = profit_ema / self.input_data.shape[1]
+        if profit_ema_per_step > self.max_profit_ema_per_step:
+            print("find best profit_per_step: {} profit_ema:{} tot_profit:{} window:{}".format(
+                                                                            profit_ema_per_step,
+                                                                            profit_ema,
+                                                                            tot_profit,
+                                                                            self.ema_window))
+
+            self.max_profit_ema_per_step = profit_ema_per_step
+            
+            self.change_rate = np.concatenate((input_data, 
+                                              stock_change_rate,
+                                              asset_change_rate), axis=2)
+            self.trade_strategy_desc = TradeStrategyDesc(X_list,
+                                             self.ema_window,
+                                             self.optimize_data)
+            self.tot_profit = tot_profit
+            self.max_profit_list = seq_profit_list
+        
+        return np.array(profit_ema_per_step).reshape((1,1))
     
-    def get_best_result(self):
-        return self.max_profit, self.is_hold
     
+    def get_max_profit_list(self):
+        return self.max_profit_list
     
     def get_strategy_desc(self):
-        return self.strategy_desc
+        return self.trade_strategy_desc
     
     def get_save_filename(self, path):
-        if path[-1] != '/':
-            path += '/'
-        
-        return path + 'strategy_desc.pkl'
-        
+        return os.path.join(path, 'strategy_desc.pkl')
     
     def save(self, save_path):
-        assert(self.strategy_desc != None)
+        assert(self.trade_strategy_desc != None)
         with open(self.get_save_filename(save_path), 'wb') as f:
-            pickle.dump(self.strategy_desc, f, pickle.HIGHEST_PROTOCOL)
+            pickle.dump(self.trade_strategy_desc, f, pickle.HIGHEST_PROTOCOL)
+            
+    def load(self, save_path):
+        with open(self.get_save_filename(save_path), 'rb') as f:
+            self.trade_strategy_desc = pickle.load(f)
+        this.ema_window = self.trade_strategy_desc.ema_window
+        this.optimize_data = self.trade_strategy_desc.optimize_data
 
 
 # In[ ]:
 
 
 value_model = ValueModel('Nordea', 5, 60)
-value_model.optimize('.', is_test=False)
+value_model.optimize(is_test=False)
 
 
 # In[ ]:
 
 
-
+value_model = ValueModel('Nordea', 5, 60)
+value_model.load()
+value_model.test()
 
