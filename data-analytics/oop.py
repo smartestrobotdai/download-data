@@ -451,7 +451,7 @@ class DataManipulator:
     
 
 
-# In[507]:
+# In[ ]:
 
 
 import numpy as np
@@ -590,21 +590,33 @@ class ValueModel:
         self.strategy_model.load(self.save_path)
         print("Model loaded!")
         
-    def get_avg_profit_per_day(self, profit_list, split_daily_data):
-        profit_per_seq = sum(profit_list)/len(profit_list)
-        if split_daily_data == True:
-            return ((1+profit_per_seq)**2) - 1 
-        else:
-            return profit_per_seq
+    def get_avg_of_list(self, profit_list):
+        return sum(profit_list)/len(profit_list)
         
-    def get_ema_profit_per_day(self, profit_list, split_daily_data):
-        window = int(len(profit_list)/2)
-        ema_profit_per_seq = get_ema(profit_list, window)
+    def get_ema_profit_per_day(self, profit_list, split_daily_data, window):
+        daily_profit_list = self.get_daily_list(profit_list, split_daily_data)
         
+        half = int(len(daily_profit_list)/2)
+        if window > half:
+            window = half
+            
+        return get_ema(daily_profit_list, window)
+        
+    def get_daily_list(self, profit_list, split_daily_data):
+        result = []
         if split_daily_data == True:
-            return ((1+ema_profit_per_seq)**2) - 1 
+            for i in range(0, len(profit_list), 2):
+                daily_profit = (1+profit_list[i])*(1+profit_list[i+1])-1
+                result.append(daily_profit)
+            return result
         else:
-            return ema_profit_per_seq
+            return profit_list
+        
+    def get_total_profit_from_list(self, profit_list, seq_num):
+        tot_profit = 1
+        for i in range(seq_num):
+            tot_profit *= (1+profit_list[i])
+        return tot_profit - 1
     
     def opt_func(self, X_list):
         assert(len(X_list)==1)
@@ -615,20 +627,33 @@ class ValueModel:
         error_ema, error_mean, model, data_manipulator, strategy_model =             self.get_profit(X_list)
 
         max_profit_list = strategy_model.get_max_profit_list()
+        print("max_profit_list length:{}".format(len(max_profit_list)))
         
+        max_profit_list = self.get_daily_list(max_profit_list, data_manipulator.split_daily_data)
+        print("max_profit_list length:{}".format(len(max_profit_list)))
         # get profit for the training period.
-        avg_profit_per_day = self.get_avg_profit_per_day(max_profit_list, data_manipulator.split_daily_data)
-        profit_ema_per_day = self.get_ema_profit_per_day(max_profit_list, data_manipulator.split_daily_data)
+        avg_training_profit = self.get_avg_of_list(max_profit_list)
+        ema_5_training_profit = get_ema(max_profit_list, 5)
+        ema_10_training_profit = get_ema(max_profit_list, 10)
         
         # get the overall profit for the testing period.
-        test_profit = self.test(model, data_manipulator, strategy_model)
+        test_profit, test_profit_list = self.test(model, data_manipulator, strategy_model)
         
-        print("FINAL RESULT: {},{},{},{},{}".format(profit_ema_per_day, avg_profit_per_day,
-                                                 error_ema, error_mean , test_profit))
+        test_profit_list = self.get_daily_list(test_profit_list, data_manipulator.split_daily_data)
+        profit_1 = test_profit_list[0]
         
-        if profit_ema_per_day > self.max_profit and profit_ema_per_day > 0:
+        profit_5 = self.get_total_profit_from_list(test_profit_list, 5)
+        
+        profit_10 = self.get_total_profit_from_list(test_profit_list, 10)
+        
+        
+        print("FINAL RESULT: {},{},{},{},{},{},{},{},{}".format(avg_training_profit, ema_5_training_profit, ema_10_training_profit,
+                                                 error_ema, error_mean , profit_1, profit_5,  profit_10,
+                                                   test_profit))
+        
+        if ema_10_training_profit > self.max_profit and ema_10_training_profit > 0:
             #print("find the new best profit:{}, error:{}".format(profit_ema_per_day, error_ema))
-            self.max_profit = profit_ema_per_day
+            self.max_profit = ema_10_training_profit
             self.model = model
             self.data_manipulator = data_manipulator
             self.strategy_model = strategy_model
@@ -636,7 +661,7 @@ class ValueModel:
             self.save()
  
             
-        return np.array(profit_ema_per_day).reshape((1,1))
+        return np.array(ema_10_training_profit).reshape((1,1))
 
     def test(self, model, data_manipulator, strategy_model):        
         data_testing_input, data_testing_output, timestamps, price             = data_manipulator.prep_testing_data('npy_files', self.stock_index)
@@ -679,16 +704,18 @@ class ValueModel:
                                 outputs,
                                 price[prediction_start:]), axis=2)
         tot_profit = 1
+        profit_list = []
         for i in range(0, len(strategy_data_input), n_prediction_seqs):
             start = i
             end = min(i+n_prediction_seqs, len(strategy_data_input))
-            result = strategy_model.run_test(strategy_data_input[start:end])
+            result, result_list = strategy_model.run_test(strategy_data_input[start:end])
             tot_profit *= result
-            strategy_model.append_data(strategy_data_input[start:end])
-            strategy_model.optimize()
+            profit_list += result_list
+            #strategy_model.append_data(strategy_data_input[start:end])
+            #strategy_model.optimize()
         
         #print("test finished, total profit: {} in {} seqs".format(tot_profit, len(strategy_data_input)))
-        return tot_profit
+        return tot_profit-1, profit_list
     
     def get_date(self, timestamps, seq_no):
         return timestamps[seq_no][0].date().strftime("%y%m%d")
@@ -745,7 +772,13 @@ class ValueModel:
         print("strategy_data_input")
         print(strategy_data_input.shape)
         ema_window = int(strategy_data_input.shape[0]/2)
-        strategy_model = StrategyModel(ema_window)
+        
+        
+        if split_daily_data == True:
+            n_max_trades_per_seq = 1
+        else:
+            n_max_trades_per_seq = 2
+        strategy_model = StrategyModel(n_max_trades_per_seq, ema_window)
         strategy_model.append_data(strategy_data_input)
         strategy_model.optimize()
         return error_ema, error_mean, model, data_manipulator, strategy_model
@@ -796,7 +829,7 @@ class ValueModel:
     
 
 
-# In[508]:
+# In[ ]:
 
 
 def print_verbose_func(verbose, msg):
@@ -804,7 +837,7 @@ def print_verbose_func(verbose, msg):
         print(msg)
 
 
-# In[509]:
+# In[ ]:
 
 
 class TradeStrategyDesc:
@@ -839,7 +872,7 @@ class TradeStrategyDesc:
                  self.max_hold_steps]]
 
 
-# In[510]:
+# In[ ]:
 
 
 from functools import partial
@@ -852,12 +885,13 @@ class StrategyModel:
                  {'name': 'min_hold_steps', 'type': 'discrete', 'domain': range(10,100)},
                  {'name': 'max_hold_steps', 'type': 'discrete', 'domain': range(50,200)},
          ]
-    def __init__(self, ema_window=None):
+    def __init__(self, n_max_trades_per_seq=4, ema_window=None):
         self.max_profit = -999.0
         self.strategy_desc = None
         self.ema_window = ema_window
         self.optimize_data = None
         self.tot_profit = None
+        self.n_max_trades_per_seq = n_max_trades_per_seq
         return
     
     # append the data for the optimization
@@ -895,7 +929,7 @@ class StrategyModel:
         
         print("test finished: tot_profit:{} in {} seqs".format(tot_profit,
                                                                     len(daily_profit_list)))
-        return tot_profit
+        return tot_profit, daily_profit_list
     
     # the input data is in shape (days, steps, [timestamp, value, price])
     def get_profit_ema(self, X_list):
@@ -929,7 +963,6 @@ class StrategyModel:
     
     def run_test_core(self, X_list, input_data, verbose=False):
         print_verbose = partial(print_verbose_func, verbose)
-
         buy_threshold = X_list[0]
         sell_threshold = X_list[1]
         stop_loss = X_list[2]
@@ -939,7 +972,7 @@ class StrategyModel:
         tot_profit = 1
         tot_stock_profit = 1
         buy_step = None
-        max_trades = 3
+        n_max_trades = self.n_max_trades_per_seq
         cost = 0.00015/2
         n_tot_trades = 0
         # to prepare the result data
@@ -968,7 +1001,7 @@ class StrategyModel:
                 value = daily_data[step][1]
                 price = daily_data[step][2]
                 change_rate = stock_change_rate[day_idx][step][0]
-                if state == 0 and time.time().hour >= 9 and                     n_trades < max_trades and step < len(daily_data)-min_hold_steps and                     value > buy_threshold:
+                if state == 0 and time.time().hour >= 9 and                     n_trades < n_max_trades and step < len(daily_data)-min_hold_steps and                     value > buy_threshold:
                         state = 1
                         asset_change_rate[day_idx][step][0] = -cost
                         tot_profit *= (1-cost)
@@ -984,7 +1017,7 @@ class StrategyModel:
                         # don't do more trade today!
                         if trade_profit-1 < stop_loss:
                             print_verbose("stop loss stop trading!")
-                            n_trades = max_trades
+                            n_trades = n_max_trades
 
                         change_rate = (1+change_rate)*(1-cost)-1 
                         tot_profit *= (1 + change_rate)
@@ -1005,12 +1038,7 @@ class StrategyModel:
             print_verbose("finished day {}, daily profit:{}".format(day_idx,daily_profit))
             daily_profit_list.append(daily_profit - 1)
             n_tot_trades += n_trades
-    
         return tot_profit, n_tot_trades, daily_profit_list, stock_change_rate, asset_change_rate
-    
-    
-
-    
     
     def get_max_profit_list(self):
         return self.max_profit_list
@@ -1037,13 +1065,5 @@ class StrategyModel:
 
 
 value_model = ValueModel('Nordea', 5, 60)
-value_model.optimize(is_test=True)
-
-
-# In[ ]:
-
-
-value_model = ValueModel('Nordea', 5, 60)
-value_model.load()
-value_model.test()
+value_model.optimize(is_test=False)
 
