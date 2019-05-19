@@ -542,8 +542,6 @@ class ValueModel:
     def get_data_manipulator_filename(self):
         return os.path.join(self.save_path, 'data_manipulator.pkl')
     
-
-    
     def save(self):
         # what is the last training date?
         self.model.save(self.save_path, self.data_manipulator.last_learning_date)
@@ -647,9 +645,17 @@ class ValueModel:
         profit_10 = self.get_total_profit_from_list(test_profit_list, 10)
         
         
-        print("FINAL RESULT: {},{},{},{},{},{},{},{},{}".format(avg_training_profit, ema_5_training_profit, ema_10_training_profit,
-                                                 error_ema, error_mean , profit_1, profit_5,  profit_10,
-                                                   test_profit))
+        print("FINAL RESULT: {},{},{},{},{},{},{},{},{},{},{}".format(data_manipulator.ema,
+                                                                      data_manipulator.beta,
+                                                                      avg_training_profit, 
+                                                                      ema_5_training_profit, 
+                                                                      ema_10_training_profit,
+                                                                      error_ema, 
+                                                                      error_mean, 
+                                                                      profit_1, 
+                                                                      profit_5,  
+                                                                      profit_10,
+                                                                      test_profit))
         
         if ema_10_training_profit > self.max_profit and ema_10_training_profit > 0:
             #print("find the new best profit:{}, error:{}".format(profit_ema_per_day, error_ema))
