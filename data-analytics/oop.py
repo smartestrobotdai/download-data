@@ -468,8 +468,8 @@ class ValueModel:
           {'name': 'learning_period', 'type': 'discrete', 'domain': (10,20,30,40)},
           {'name': 'prediction_period', 'type': 'discrete', 'domain': (1,2,5,10)},
           {'name': 'n_repeats', 'type': 'discrete', 'domain': (3,5,10,20,30,40)},
-          {'name': 'beta', 'type': 'discrete', 'domain': (99, 98)},
-          {'name': 'ema', 'type': 'discrete', 'domain': (1,5,10,20)},
+          {'name': 'beta', 'type': 'discrete', 'domain': (99,)},
+          {'name': 'ema', 'type': 'discrete', 'domain': (20,)},
           {'name': 'time_format', 'type': 'discrete', 'domain': (0,1,2)}, #1 for stepofday, 2 for stepofweek
           {'name': 'volume_input', 'type': 'discrete', 'domain': (0,1)},
           {'name': 'use_centralized_bid', 'type': 'discrete', 'domain': (0,1)},
@@ -483,8 +483,8 @@ class ValueModel:
           {'name': 'learning_period', 'type': 'discrete', 'domain': (10,20)},
           {'name': 'prediction_period', 'type': 'discrete', 'domain': (5,10)},
           {'name': 'n_repeats', 'type': 'discrete', 'domain': (3,5)},
-          {'name': 'beta', 'type': 'discrete', 'domain': (99, 98)},
-          {'name': 'ema', 'type': 'discrete', 'domain': (1,5,10,20)},
+          {'name': 'beta', 'type': 'discrete', 'domain': (99,)},
+          {'name': 'ema', 'type': 'discrete', 'domain': (20,)},
           {'name': 'time_format', 'type': 'discrete', 'domain': (0,1,2)}, #1 for stepofday, 2 for stepofweek
           {'name': 'volume_input', 'type': 'discrete', 'domain': (0,1)},
           {'name': 'use_centralized_bid', 'type': 'discrete', 'domain': (0,1)},
@@ -1072,4 +1072,10 @@ class StrategyModel:
 
 value_model = ValueModel('Nordea', 5, 60)
 value_model.optimize(is_test=False)
+
+
+# In[ ]:
+
+
+
 
