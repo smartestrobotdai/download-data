@@ -53,6 +53,6 @@ docker-compose down
 sleep 5
 
 cd data-analytics
-/usr/bin/python3 omx30-prep.py
+/usr/bin/python3 omx30-prep.py >> ${LOG_FILE}
 
 cd ${ORI_DIR}
