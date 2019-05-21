@@ -38,7 +38,7 @@ input_data = data[:60,6:-5,[-2,-3,-1]]
 
 strategy_model_list = []
 for i in range(5):
-    strategy_model = StrategyModel(n_max_trades_per_day=4, slippage=0.00015, courtage=0, max_iter=100)
+    strategy_model = StrategyModel(n_max_trades_per_day=4, slippage=0.00015, courtage=0, max_iter=300)
     strategy_model.optimize(input_data)
     strategy_model_list.append(strategy_model)
 
