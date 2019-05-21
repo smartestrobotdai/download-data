@@ -28,9 +28,7 @@ class TradeStrategyDesc:
     
     
     def to_list(self):
-        return [[self.buy_threshold, self.sell_threshold, self.stop_loss, self.stop_gain, 
-                 self.min_hold_steps,
-                 self.max_hold_steps]]
+        return [self.buy_threshold, self.sell_threshold, self.stop_loss, self.stop_gain]
 
 
 
@@ -81,7 +79,8 @@ class StrategyModel:
         print("starting test: {}".format(self.trade_strategy_desc.get_parameter_str()))
 
         X_list = self.trade_strategy_desc.to_list()
-        return self.get_total_profit(test_data, X_list)
+        print(X_list)
+        return self.get_profit_list(X_list, test_data)
     
     def get_total_profit(self, input_data, X_list):
         assert(len(X_list) == 1)
@@ -107,47 +106,21 @@ class StrategyModel:
                                                                     trade_strategy_desc.get_parameter_str()))
         self.n_iter += 1
         return np.array(tot_profit).reshape((1,1))
+
+    def get_profit_list(self, X_list,  input_data):
+        assert(self.trade_strategy_desc != None)
+
+        tot_profit, n_tot_trades, daily_profit_list, _, _ = self.run_test_core(X_list, 
+                                                                                input_data, 
+                                                                                verbose=False)
+        return tot_profit, daily_profit_list
     
     def get_training_seq_num(self):
         if self.split_daily_data == True:
             return self.ema_window * 4
         else:
             return self.ema_window * 2
-    
-    # the input data is in shape (days, steps, [timestamp, value, price])
-    def get_profit_ema(self, X_list):
-        assert(len(X_list)==1)
-        X_list = X_list[0]
-        n_training_seq_num = self.get_training_seq_num()
-        input_data = self.input_data[-n_training_seq_num:]
-        
-        tot_profit, n_tot_trades, seq_profit_list, \
-            stock_change_rate, asset_change_rate = self.run_test_core(X_list, input_data)
-        
-        assert(len(seq_profit_list) == n_training_seq_num)
-        
-        daily_profit_list = get_daily_profit_list(seq_profit_list, self.split_daily_data)
-        profit_ema = get_ema(daily_profit_list, self.ema_window)
-        
-        if profit_ema > self.max_profit_ema:
-            print("find best profit_ema_{}: {} tot_profit:{}".format(
-                                                                            self.ema_window,
-                                                                            profit_ema,
-                                                                            tot_profit,
-                                                                            self.ema_window))
 
-            self.max_profit_ema = profit_ema
-            
-            self.change_rate = np.concatenate((input_data, 
-                                              stock_change_rate,
-                                              asset_change_rate), axis=2)
-            self.trade_strategy_desc = TradeStrategyDesc(X_list,
-                                             self.ema_window,
-                                             self.optimize_data)
-            self.tot_profit = tot_profit
-            self.max_profit_list = seq_profit_list
-        
-        return np.array(profit_ema).reshape((1,1))
     
     def run_test_core(self, X_list, input_data, verbose=False):
         print_verbose = partial(print_verbose_func, verbose)
