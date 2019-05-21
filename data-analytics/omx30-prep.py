@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # coding: utf-8
 
-# In[1]:
+# In[ ]:
 
 
 import pandas as pd
@@ -14,21 +14,21 @@ df=pd.read_csv('../data/data.csv.gz', compression='gzip', sep=',')
 df['timestamp'] = pd.to_datetime(df['time_stamp'], format="%Y-%m-%d %H:%M:%S").dt.tz_convert('CET')
 
 
-# In[2]:
+# In[ ]:
 
 
 stock_delta = df['stock_id'] - df['stock_id'].shift()
 time_delta = (df['timestamp'] - df['timestamp'].shift()).fillna(10000).dt.total_seconds()
 
 
-# In[3]:
+# In[ ]:
 
 
 stock_split_index=df.index[stock_delta!=0].tolist()
 stock_split_index.append(len(df))
 
 
-# In[4]:
+# In[ ]:
 
 
 day_split_index=df.index[abs(time_delta)>36000].tolist()
@@ -36,7 +36,7 @@ day_split_index.insert(0, 0)
 day_split_index.append(len(df))
 
 
-# In[5]:
+# In[ ]:
 
 
 stock_id_list = df['stock_id'].unique().tolist()
@@ -46,7 +46,7 @@ for stock_index in stock_id_list:
     i+=1
 
 
-# In[6]:
+# In[ ]:
 
 
 current_stock_index = 0
@@ -64,7 +64,7 @@ for i in range(len(day_split_index) - 1):
         current_stock_index += 1
 
 
-# In[7]:
+# In[ ]:
 
 
 for stock_id in range(len(stock_id_list)):
@@ -79,11 +79,19 @@ for stock_id in range(len(stock_id_list)):
 # In[ ]:
 
 
-for stock_id in range(len(time_series_all_list)):
+# initialize a new list
+value_result_list = []
+for s_id in range(len(time_series_all_list)):
+    new_list = [None] * len(time_series_all_list[0])
+    value_result_list.append(new_list)
+    
+
+#for stock_id in range(len(time_series_all_list)):
+for stock_id in (5,):
     print("handling stock_id: {}".format(stock_id))
     for day_id in range(len(time_series_all_list[stock_id])):
         # :-1 is that we don't like the last record at 17:30 which is a aggregated number.
-        df = time_series_all_list[stock_id][day_id]
+        df = time_series_all_list[stock_id][day_id].copy()
         # some data might miss, we must make a right join with full time series
         # and do fillna.
         df2 = df.set_index('timestamp')
@@ -96,7 +104,7 @@ for stock_id in range(len(time_series_all_list)):
         #dti.drop(dti.tail(5).head(4).index, inplace=True)
         df3 = df2.join(dti, how='right')
         if day_id == 0: # the first day, we must set the value from 8.55-8.59 as same as 9.00
-            df3['last'].iloc[0] = df3['last'].iloc[5]
+            df3['last'].iloc[0] = df3['last'].iloc[6]
         else:
             df3['last'].iloc[0] = time_series_all_list[stock_id][day_id-1]['last'].iloc[-1]
         
@@ -143,7 +151,13 @@ for stock_id in range(len(time_series_all_list)):
             df['value_ema_20_beta_98'] = df['diff_ema_20'].shift(-1).fillna(0) +                 0.98 * df['value_ema_20_beta_98'].shift(-1).fillna(0)
         # drop the first row because diff is nan    
         #df.drop(0, inplace=True)
-        time_series_all_list[stock_id][day_id] = df.fillna(0)
+        value_result_list[stock_id][day_id] = df.fillna(0)
+
+
+# In[ ]:
+
+
+value_result_list[5][0]
 
 
 # In[ ]:
@@ -166,15 +180,17 @@ def add_step_columns(df):
 
 csv_save_path = 'csv_files/'
 npy_save_path = 'npy_files/'
-for s_id in range(len(time_series_all_list)):
-    df_merged = time_series_all_list[s_id][0][column_wanted_in_order]
+#for s_id in range(len(value_result_list)):
+for s_id in (5,):
+    df_merged = value_result_list[s_id][0][column_wanted_in_order]
     df_merged = add_step_columns(df_merged)
-    for day_id in range(1, len(time_series_all_list[s_id])):
-        df = time_series_all_list[s_id][day_id][column_wanted_in_order]
+    for day_id in range(1, len(value_result_list[s_id])):
+        df = value_result_list[s_id][day_id][column_wanted_in_order]
         df = add_step_columns(df)
         df_merged = df_merged.append(df)
-
-    for ema in (1, 5, 10, 20):
+    
+    
+    for ema in (10, 20):
         for beta in (99, 98):
             print("Saving to files for stock id:{} ema:{} beta:{}".format(s_id, ema, beta))
             npy_filename = npy_save_path + "ema{}_beta{}_{}.npy".format(ema, beta, s_id)
