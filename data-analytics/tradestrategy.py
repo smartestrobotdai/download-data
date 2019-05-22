@@ -5,123 +5,107 @@ import GPyOpt
 import os
 import pickle
 
-def print_verbose_func(verbose, msg):
-    if verbose == True:
-        print(msg)
 
-
-class TradeStrategyDesc:
-    def __init__(self,
-                 X_list):
-        self.buy_threshold = X_list[0]
-        self.sell_threshold = X_list[1]
-        self.stop_loss = X_list[2]
-        self.stop_gain = X_list[3]
-        
-    def get_parameter_str(self):
-        s = "buy_threshold:{} sell_threshold:{} stop_loss:{} \
-            stop_gain:{}".format(self.buy_threshold,
-                                                  self.sell_threshold,
-                                                  self.stop_loss,
-                                                  self.stop_gain)
-        return s
-    
-    
-    def to_list(self):
-        return [self.buy_threshold, self.sell_threshold, self.stop_loss, self.stop_gain]
-
-
-
-class StrategyModel:
+class TradeStrategyFactory:
     mixed_domain = [{'name': 'buy_threshold', 'type': 'continuous', 'domain': (0.0, 0.005)},
                  {'name': 'sell_threshold', 'type': 'continuous', 'domain': (-0.005, 0.0)},
                  {'name': 'stop_loss', 'type': 'continuous', 'domain': (-0.01,-0.003)},
                  {'name': 'stop_gain', 'type': 'continuous', 'domain': (0.002, 0.02)},
          ]
-    def __init__(self, n_max_trades_per_day=4, slippage=0.00015, courtage=0, max_iter=50):
-        self.max_profit = -999.0
-        self.strategy_desc = None
-        self.optimize_data = None
-        self.tot_profit = None
+    def __init__(self, data, n_strategies=5, n_max_trades_per_day=4, slippage=0.00015, courtage=0):
+        self.data = data
+        self.n_max_trades_per_day = n_max_trades_per_day
         self.slippage = slippage
         self.courtage = courtage
-        self.max_iter = max_iter
-        self.n_iter = 0
+        self.n_strategies = n_strategies
+        self.trade_strategy_list = []
+        self.trade_strategy = None
+        return
+
+    def create_trade_strategies(self, max_iter=200):
+        init_numdata = int(max_iter / 4)
+        for i in range(self.n_strategies):
+            print("Searching Strategies, Run: {}".format(i))
+            self.n_iter = 0
+            self.trade_strategy = None
+            self.max_profit = -1
+            myBopt = GPyOpt.methods.BayesianOptimization(self.get_profit,  # Objective function       
+                                                 domain=self.mixed_domain,          # Box-constraints of the problem
+                                                 initial_design_numdata = init_numdata,   # Number data initial design
+                                                 acquisition_type='EI',        # Expected Improvement
+                                                 exact_feval = True,
+                                                 maximize = True)           # True evaluations, no sample noise
+
+            myBopt.run_optimization(max_iter, eps=0)
+
+            self.trade_strategy_list.append(self.trade_strategy)
+
+        return self.trade_strategy_list
+
+
+
+    def get_profit(self, X_list):
+        assert(len(X_list)==1)
+        X_list = X_list[0]
+        buy_threshold = X_list[0]
+        sell_threshold = X_list[1]
+        stop_loss = X_list[2]
+        stop_gain = X_list[3]
+        trade_strategy = TradeStrategy(X_list, self.n_max_trades_per_day, 
+            self.slippage, self.courtage)
+        total_profit, daily_profit_list =  trade_strategy.get_profit(self.data)
+        avg_daily_profit = np.mean(daily_profit_list)
+        if avg_daily_profit > self.max_profit:
+            print("find new record: {}, {}".format(avg_daily_profit, 
+                    trade_strategy.get_parameter_str()))
+
+            self.max_profit = avg_daily_profit
+            self.trade_strategy = trade_strategy
+
+        self.n_iter += 1
+        if self.n_iter % 50 == 0:
+            print("iteration: {}, avg_daily_profit:{}".format(self.n_iter, avg_daily_profit))
+
+        
+        return np.mean(daily_profit_list).reshape((1,1))
+
+def print_verbose_func(verbose, msg):
+    if verbose == True:
+        print(msg)
+
+
+class TradeStrategy:
+
+    def __init__(self, X_list, n_max_trades_per_day, slippage, courtage):
+        self.buy_threshold = X_list[0]
+        self.sell_threshold = X_list[1]
+        self.stop_loss = X_list[2]
+        self.stop_gain = X_list[3]
+        self.slippage = slippage
+        self.courtage = courtage
         self.n_max_trades_per_day = n_max_trades_per_day
         return
-    
-    # append the data for the optimization
-    def append_data(self, data):
-        if self.optimize_data is None:
-            self.optimize_data = data
-        else:
-            self.optimize_data = np.concatenate((self.optimize_data, data), axis=0)
 
-    def optimize(self, optimize_data):
-        self.trade_strategy_desc = None
-        self.max_profit = -999.0
-        self.input_data = self.optimize_data
-        self.n_iter = 0
-        init_numdata = int(self.max_iter / 4)
-        opt_func = partial(self.get_total_profit, optimize_data)
-        myBopt = GPyOpt.methods.BayesianOptimization(opt_func,  # Objective function       
-                                             domain=self.mixed_domain,          # Box-constraints of the problem
-                                             initial_design_numdata = init_numdata,   # Number data initial design
-                                             acquisition_type='EI',        # Expected Improvement
-                                             exact_feval = True,
-                                             maximize = True)           # True evaluations, no sample noise
+    def get_parameter_str(self):
+        s = "buy_threshold:{} sell_threshold:{} stop_loss:{} \
+            stop_gain:{}".format(self.buy_threshold,
+                                  self.sell_threshold,
+                                  self.stop_loss,
+                                  self.stop_gain)
+        return s
 
-        myBopt.run_optimization(self.max_iter, eps=0)
-        self.input_data = None
-        return 
-    
-    def run_test(self, test_data):
-        print("starting test: {}".format(self.trade_strategy_desc.get_parameter_str()))
+    def to_list(self):
+        return [self.buy_threshold, self.sell_threshold, self.stop_loss, self.stop_gain]
 
-        X_list = self.trade_strategy_desc.to_list()
-        print(X_list)
-        return self.get_profit_list(X_list, test_data)
-    
-    def get_total_profit(self, input_data, X_list):
-        assert(len(X_list) == 1)
-        X_list = X_list[0]
-        tot_profit, n_tot_trades, daily_profit_list, _, _ = self.run_test_core(X_list, 
-                                                                                     input_data, 
-                                                                                     verbose=False)
-        if tot_profit > self.max_profit:
 
-            trade_strategy_desc = TradeStrategyDesc(X_list)
-
-            print("iter:{} new record: tot_profit:{} in {} seqs, params:{}".format(self.n_iter,
-                                                                    tot_profit,
-                                                                    len(daily_profit_list),
-                                                                    trade_strategy_desc.get_parameter_str()))
-            self.max_profit = tot_profit
-            self.trade_strategy_desc = trade_strategy_desc
-        elif self.n_iter % 50 == 0:
-            trade_strategy_desc = TradeStrategyDesc(X_list)
-            print("iter:{} tot_profit:{} in {} seqs, params:{}".format(self.n_iter,
-                                                                    tot_profit,
-                                                                    len(daily_profit_list),
-                                                                    trade_strategy_desc.get_parameter_str()))
-        self.n_iter += 1
-        return np.array(tot_profit).reshape((1,1))
-
-    def get_profit_list(self, X_list,  input_data):
-        assert(self.trade_strategy_desc != None)
-
+    def get_profit(self,  test_data, verbose=False):
+        X_list = self.to_list()
         tot_profit, n_tot_trades, daily_profit_list, _, _ = self.run_test_core(X_list, 
                                                                                 input_data, 
-                                                                                verbose=False)
+                                                                                verbose)
         return tot_profit, daily_profit_list
-    
-    def get_training_seq_num(self):
-        if self.split_daily_data == True:
-            return self.ema_window * 4
-        else:
-            return self.ema_window * 2
 
-    
+
     def run_test_core(self, X_list, input_data, verbose=False):
         print_verbose = partial(print_verbose_func, verbose)
         buy_threshold = X_list[0]
@@ -204,12 +188,6 @@ class StrategyModel:
         tot_profit -= 1
         return tot_profit, n_tot_trades, daily_profit_list, stock_change_rate, asset_change_rate
     
-    def get_max_profit_list(self):
-        return self.max_profit_list
-    
-    def get_strategy_desc(self):
-        return self.trade_strategy_desc
-    
     def get_save_filename(self, path):
         return os.path.join(path, 'strategy_desc.pkl')
     
@@ -222,3 +200,11 @@ class StrategyModel:
         with open(self.get_save_filename(save_path), 'rb') as f:
             self.trade_strategy_desc = pickle.load(f)
 
+if __name__ == '__main__':
+    print("start testing")
+    data = np.load("./npy_files/ema20_beta99_5.npy", allow_pickle=True)
+    input_data = data[:60,6:-5,[-2,-3,-1]]
+    trade_strategy_factory = TradeStrategyFactory(data, n_strategies=2)
+    strategy_list = trade_strategy_factory.create_trade_strategies(max_iter=50)
+    assert(len(strategy_list)==2)
+    
