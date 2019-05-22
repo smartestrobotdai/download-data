@@ -65,8 +65,6 @@ class TradeStrategyFactory:
         self.n_iter += 1
         if self.n_iter % 50 == 0:
             print("iteration: {}, avg_daily_profit:{}".format(self.n_iter, avg_daily_profit))
-
-        
         return np.mean(daily_profit_list).reshape((1,1))
 
 def print_verbose_func(verbose, msg):
