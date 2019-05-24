@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn import preprocessing
-
+from util import remove_centralized
 class TimeFormat:
     NONE = 0
     DAY = 1
@@ -119,7 +119,8 @@ class DataManipulator:
         
         if self.use_centralized_bid == 0:
             # remove all the rows for centralized bid. it should be from 9.01 to 17.24, which is 516-12=504 steps
-            input_np_data = input_np_data[:,7:-5,:]
+            input_np_data = remove_centralized(input_np_data)
+            
             
         shape = input_np_data.shape
         if self.split_daily_data == 1:

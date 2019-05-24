@@ -4,27 +4,49 @@ import GPy
 import GPyOpt
 import os
 import pickle
+from optimizeresult import OptimizeResult
+from util import remove_centralized
 
 
 class TradeStrategyFactory:
-    mixed_domain = [{'name': 'buy_threshold', 'type': 'continuous', 'domain': (0.0, 0.005)},
-                 {'name': 'sell_threshold', 'type': 'continuous', 'domain': (-0.005, 0.0)},
-                 {'name': 'stop_loss', 'type': 'continuous', 'domain': (-0.01,-0.003)},
-                 {'name': 'stop_gain', 'type': 'continuous', 'domain': (0.002, 0.02)},
+    mixed_domain = [{'name': 'buy_threshold', 'type': 'discrete', 'domain': tuple(np.around(np.arange(0.0, 0.005,0.0001),4))},
+                 {'name': 'sell_threshold', 'type': 'discrete', 'domain': tuple(np.around(np.arange(-0.005, 0.0, 0.0001),4))},
+                 {'name': 'stop_loss', 'type': 'discrete', 'domain': tuple(np.around(np.arange(-0.01,-0.003, 0.001),3))},
+                 {'name': 'stop_gain', 'type': 'discrete', 'domain': tuple(np.around(np.arange(0.002, 0.02,0.001),3))},
          ]
-    def __init__(self, data, n_strategies=5, n_max_trades_per_day=4, slippage=0.00015, courtage=0):
+    def __init__(self, data=None, cache_file=None,  n_max_trades_per_day=4, slippage=0.00015, courtage=0):
+        if data is not None:
+            assert(data.shape[1]==504)
         self.data = data
         self.n_max_trades_per_day = n_max_trades_per_day
         self.slippage = slippage
         self.courtage = courtage
-        self.n_strategies = n_strategies
-        self.trade_strategy_list = []
         self.trade_strategy = None
+
+        # load the initial data file
+        self.optimize_result = OptimizeResult()
+        if cache_file is not None:
+            self.cache_file = cache_file
+            self.optimize_result.load(cache_file)
         return
 
-    def create_trade_strategies(self, max_iter=200):
+    def create_from_file(self, filename, n_number):
+        optimize_result = OptimizeResult()
+        optimize_result.load(filename)
+        data = optimize_result.find_best_results(n_number, by=-1)
+        trade_strategy_list = []
+
+        for i in range(n_number):
+            X_list = data[i,:4]
+            trade_strategy_list.append(TradeStrategy(X_list, self.n_max_trades_per_day, 
+                self.slippage, self.courtage))
+
+        return trade_strategy_list
+
+    def create_trade_strategies(self, iter, max_iter=200):
         init_numdata = int(max_iter / 4)
-        for i in range(self.n_strategies):
+        trade_strategy_list = []
+        for i in range(iter):
             print("Searching Strategies, Run: {}".format(i))
             self.n_iter = 0
             self.trade_strategy = None
@@ -38,9 +60,9 @@ class TradeStrategyFactory:
 
             myBopt.run_optimization(max_iter, eps=0)
 
-            self.trade_strategy_list.append(self.trade_strategy)
+            trade_strategy_list.append(self.trade_strategy)
 
-        return self.trade_strategy_list
+        return trade_strategy_list
 
 
 
@@ -51,21 +73,36 @@ class TradeStrategyFactory:
         sell_threshold = X_list[1]
         stop_loss = X_list[2]
         stop_gain = X_list[3]
+
+        self.n_iter += 1
+        cached_result, index = self.optimize_result.find_result(X_list)
         trade_strategy = TradeStrategy(X_list, self.n_max_trades_per_day, 
             self.slippage, self.courtage)
-        total_profit, daily_profit_list =  trade_strategy.get_profit(self.data)
-        avg_daily_profit = np.mean(daily_profit_list)
+        if cached_result is not None:
+            print("find cached result: {} for {}".format(cached_result, 
+                trade_strategy.get_parameter_str()))
+            avg_daily_profit = cached_result[0]
+        else:
+            total_profit, daily_profit_list =  trade_strategy.get_profit(self.data)
+            avg_daily_profit = np.mean(daily_profit_list)
+            self.optimize_result.insert_result(X_list, avg_daily_profit)
+
         if avg_daily_profit > self.max_profit:
             print("find new record: {}, {}".format(avg_daily_profit, 
                     trade_strategy.get_parameter_str()))
 
             self.max_profit = avg_daily_profit
             self.trade_strategy = trade_strategy
+ 
 
-        self.n_iter += 1
-        if self.n_iter % 50 == 0:
-            print("iteration: {}, avg_daily_profit:{}".format(self.n_iter, avg_daily_profit))
-        return np.mean(daily_profit_list).reshape((1,1))
+        
+        if self.n_iter % 10 == 0:
+            print("iteration: {}, cachesize={}, avg_daily_profit:{}".format(self.n_iter, 
+                self.optimize_result.get_size(),
+                avg_daily_profit))
+            self.optimize_result.save(self.cache_file)
+
+        return avg_daily_profit.reshape((1,1))
 
 def print_verbose_func(verbose, msg):
     if verbose == True:
@@ -73,7 +110,6 @@ def print_verbose_func(verbose, msg):
 
 
 class TradeStrategy:
-
     def __init__(self, X_list, n_max_trades_per_day, slippage, courtage):
         self.buy_threshold = X_list[0]
         self.sell_threshold = X_list[1]
@@ -96,7 +132,7 @@ class TradeStrategy:
         return [self.buy_threshold, self.sell_threshold, self.stop_loss, self.stop_gain]
 
 
-    def get_profit(self,  test_data, verbose=False):
+    def get_profit(self,  input_data, verbose=False):
         X_list = self.to_list()
         tot_profit, n_tot_trades, daily_profit_list, _, _ = self.run_test_core(X_list, 
                                                                                 input_data, 
@@ -200,9 +236,16 @@ class TradeStrategy:
 
 if __name__ == '__main__':
     print("start testing")
-    data = np.load("./npy_files/ema20_beta99_5.npy", allow_pickle=True)
-    input_data = data[:60,6:-5,[-2,-3,-1]]
-    trade_strategy_factory = TradeStrategyFactory(data, n_strategies=2)
-    strategy_list = trade_strategy_factory.create_trade_strategies(max_iter=50)
-    assert(len(strategy_list)==2)
+    # trade_strategy_factory = TradeStrategyFactory()
+    # strategy_list = trade_strategy_factory.create_from_file("test.txt", 5)
+    # assert(len(strategy_list)==5)
+
+    data = np.load("../data-analytics/npy_files/ema20_beta99_5.npy", allow_pickle=True)
+    input_data = data[:60,:,[-2,-3,-1]]
+    input_data = remove_centralized(input_data)
+    print(input_data.shape)
+    trade_strategy_factory = TradeStrategyFactory(input_data, cache_file="strategy_cache.txt")
+    strategy_list = trade_strategy_factory.create_trade_strategies(iter=5, max_iter=50)
+    assert(len(strategy_list)==5)
     
+
