@@ -34,6 +34,12 @@ class DataManipulator:
         self.scaler_output = None
         self.initialized = False
 
+
+    # returns the training data's length in the historic data
+    def get_training_data_len(self):
+        assert(self.n_training_days != None)
+        return self.n_training_days - self.n_learning_days
+
     def get_learning_seqs(self):
         return self.n_learning_seqs
 
@@ -81,6 +87,7 @@ class DataManipulator:
         self.scaler_input = self.build_scaler(input_data[start_seq_index:end_seq_index])
         self.scaler_output = self.build_scaler(output_data[start_seq_index:end_seq_index])
         self.initialized = True
+        self.n_training_days = end_day_index - start_day_index
         return
 
     def build_scaler(self, data):

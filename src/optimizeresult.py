@@ -3,20 +3,22 @@ import os.path
 import pandas as pd
 
 class OptimizeResult:
-	def __init__(self):
+	def __init__(self, result_column_index):
 		self.data = None
 		self.filename = "test.txt"
+		self.result_column_index = result_column_index
 		return
 
 	def insert_result(self, X, Y):
 		new_data = [np.hstack((X,Y))]
 		if self.data is None:
 			self.data = np.array(new_data)
+			return index
 		else:
 			cached_y, index = self.find_result(X)
 			if cached_y == None:
 				self.data = np.insert(self.data, index, new_data, axis=0)
-
+			return index
 
 
 	# return: the value and the position it should be inserted.
@@ -61,15 +63,29 @@ class OptimizeResult:
 
 		return len(self.data)
 
-	def find_best_results(self, n_top_rows, by):
-		if by < 0:
+	def get_result_column_index(self):
+		assert(self.data is not None)
+		if self.result_column_index < 0:
 			n_columns = self.data.shape[1]
-			by = n_columns + by
+			by = n_columns + self.result_column_index
+		else:
+			by = self.result_column_index
 
+		return by
+
+	def get_best_results(self, n_top_rows):
+
+		by = self.get_result_column_index()
 		df = pd.DataFrame(self.data)
 		df = df.sort_values(by=by)
 		print(df.tail(n_top_rows))
 		return df.tail(n_top_rows).values
+
+	def is_best_results(self, n_top_rows, value):
+		by = self.get_result_column_index()
+		df = pd.DataFrame(self.data)
+		min_best_value = df[by].sort_values(ascending=False).iloc[n_top_rows]
+		return values > min_best_value
 
 	def save(self, filename):
 		np.savetxt(filename, self.data, delimiter=',')
