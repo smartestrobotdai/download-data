@@ -24,16 +24,16 @@ class TradeStrategyFactory:
         self.trade_strategy = None
 
         # load the initial data file
-        self.optimize_result = OptimizeResult()
+        self.optimize_result = OptimizeResult(result_column_index=-1)
         if cache_file is not None:
             self.cache_file = cache_file
             self.optimize_result.load(cache_file)
         return
 
     def create_from_file(self, filename, n_number):
-        optimize_result = OptimizeResult()
+        optimize_result = OptimizeResult(result_column_index=-1)
         optimize_result.load(filename)
-        data = optimize_result.find_best_results(n_number, by=-1)
+        data = optimize_result.get_best_results(n_number)
         trade_strategy_list = []
 
         for i in range(n_number):

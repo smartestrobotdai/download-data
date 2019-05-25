@@ -6,9 +6,10 @@ import os.path
 import pickle
 from datamanipulator import DataManipulator
 from statefullstmmodel import StatefulLstmModel
-from util import remove_centralized, timestamp2date
+from util import remove_centralized, timestamp2date, get_latest_dir
 import matplotlib.pyplot as plt
 import datetime
+import matplotlib.dates as dates
 
 class StockWorm:
     def __init__(self, stock_index, input_data_path, save_path):
@@ -24,7 +25,6 @@ class StockWorm:
     def create_if_not_exist(self, path):
         if not os.path.isdir(path):
             os.mkdir(path)
-
 
     def init(self, features, strategy_model_list, start_day_index, end_day_index):
         n_neurons = int(features[0])
@@ -207,17 +207,6 @@ class StockWorm:
         filename = self.get_historic_data_filename(path, self.learning_end_date)
         np.save(filename, self.historic_data)
     
-    def get_latest_dir(self, save_path):
-        all_subdirs = [d for d in os.listdir(save_path) if os.path.isdir(os.path.join(save_path, d))]
-        max_time = 0
-        for dirname in all_subdirs:
-            fullname = os.path.join(save_path, dirname)
-            time = os.path.getmtime(fullname)
-            if time > max_time:
-                max_time = time
-                result = dirname
-        return result
-
 
 
     def load(self, load_date=None):
@@ -227,7 +216,7 @@ class StockWorm:
         
         # get the latest directory
         if load_date == None:
-            load_date = self.get_latest_dir(path)
+            load_date = get_latest_dir(path)
         
         print("Loading model for date: {} under: {}".format(load_date, path))
         self.model.load(path, load_date)
@@ -246,56 +235,61 @@ class StockWorm:
     def get_daily_data(self):
         stock_change_rate = self.historic_data[:,:,3]
         asset_change_rate = self.historic_data[:,:,4]
-        daily_stock_change_rate = np.prod(stock_change_rate+1, axis=1) - 1
-        daily_asset_change_rate = np.prod(asset_change_rate+1, axis=1) - 1
+        daily_stock_change_rate = np.prod(stock_change_rate+1, axis=1)
+        daily_asset_change_rate = np.prod(asset_change_rate+1, axis=1)
         date = self.historic_data[:,0,0]
         return np.stack((date, daily_stock_change_rate, daily_asset_change_rate), axis=1)
 
-    def get_accumulate_data(self, data):
-        output_data = []
-        tot = 1
-        for i in range(len(data)):
-            tot = tot * (1+data[i])
-            output_data.append(tot)
-        print(output_data)
-        return output_data
 
     def plot(self):
         assert(self.historic_data is not None)
+        training_data_length = self.data_manipulator.get_training_data_len()
         daily_data = self.get_daily_data()
         print("preparing plotting")
         print(daily_data.shape)
         
-        x = daily_data[:,0]
-        y = self.get_accumulate_data(daily_data[:,1])
-        z = self.get_accumulate_data(daily_data[:,2])
+        x1 = daily_data[:training_data_length,0]
+        y1 = np.cumprod(daily_data[:training_data_length,1])
+        z1 = np.cumprod(daily_data[:training_data_length,2])
+        
 
-        plt.plot(x,y)
-        plt.plot(x,z)
+        plt.subplot(2, 1, 1)
+        plt.plot(x1,y1)
+        plt.plot(x1,z1)
+        plt.gca().xaxis.set_major_formatter(dates.DateFormatter('%m-%d'))
+        #plt.gca().xaxis.set_major_locator(dates.DateLocator())
+        
+        #plt.gcf().autofmt_xdate()
+
+        x2 = daily_data[training_data_length:, 0]
+        y2 = np.cumprod(daily_data[training_data_length:, 1])
+        z2 = np.cumprod(daily_data[training_data_length:, 2])
+
+        plt.subplot(2, 1, 2)
+        plt.plot(x2,y2)
+        plt.plot(x2,z2)
+        plt.gca().xaxis.set_major_formatter(dates.DateFormatter('%m-%d'))
+        #plt.gca().xaxis.set_major_locator(dates.DateLocator())
+        #plt.gcf().autofmt_xdate()
         plt.show()
 
 
 if __name__ == '__main__':
-    from tradestrategy import TradeStrategyFactory
-    trade_strategy_factory = TradeStrategyFactory()
-    strategy_list = trade_strategy_factory.create_from_file('strategy_cache.txt', 10)
-    stock_worm = StockWorm(5, 'npy_files', 'my_model')
+    # from tradestrategy import TradeStrategyFactory
+    # trade_strategy_factory = TradeStrategyFactory()
+    # strategy_list = trade_strategy_factory.create_from_file('strategy_cache.txt', 10)
+    # stock_worm = StockWorm(5, 'npy_files', 'my_model')
 
-    features=[60.0 , 0.004 , 1.0 , 0.0 , 20.0 , 20.0 ,  1.0 , 99.0,  20.0 , 1.0,  1.0 , 1.0,  1.0]
-    total_profit, profit_daily, errors_daily = stock_worm.init(features, strategy_list, 0, 60)
-    print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
-    stock_worm.save()
+    # features=[60.0 , 0.004 , 1.0 , 0.0 , 20.0 , 20.0 ,  1.0 , 99.0,  20.0 , 1.0,  1.0 , 1.0,  1.0]
+    # total_profit, profit_daily, errors_daily = stock_worm.init(features, strategy_list, 0, 60)
+    # print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
+    # stock_worm.save()
 
-    total_profit1, profit_daily, errors_daily = stock_worm.test()
-    print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit1, profit_daily))
+    # total_profit1, profit_daily, errors_daily = stock_worm.test()
+    # print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit1, profit_daily))
 
     stock_worm2 = StockWorm(5, 'npy_files', 'my_model')
     stock_worm2.load()    
-
-    total_profit2, profit_daily, errors_daily = stock_worm2.test()
-    print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit2, profit_daily))
-    stock_worm2.save()
-    assert(total_profit1 == total_profit2)
 
     stock_worm2.plot()
 

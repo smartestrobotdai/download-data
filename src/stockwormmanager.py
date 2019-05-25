@@ -16,7 +16,7 @@ from util import md5
 class StockWormManager:
     mixed_domain = [{'name': 'n_neurons', 'type': 'discrete', 'domain': tuple(range(20,160,20))},
       {'name': 'learning_rate', 'type': 'discrete', 'domain': (0.001,0.002,0.003,0.004)},
-      {'name': 'num_layers', 'type': 'discrete', 'domain': (1,2,3,4,5,6)},
+      {'name': 'num_layers', 'type': 'discrete', 'domain': (1,2,3,4,5,6,7,8)},
       {'name': 'rnn_type', 'type': 'discrete', 'domain': (0,1,2)},
       {'name': 'learning_period', 'type': 'discrete', 'domain': (20,30,40)},
       {'name': 'prediction_period', 'type': 'discrete', 'domain': (2,5,10,20)},
@@ -44,18 +44,20 @@ class StockWormManager:
       {'name': 'split_daily_data', 'type': 'discrete', 'domain': (0,1)}
      ]
 
-    def __init__(self, stock_name, stock_index):
+    def __init__(self, stock_name, stock_index, model_save_path):
         self.stock_name = stock_name
         self.stock_index = stock_index
+        self.model_save_path = model_save_path
 
-    def search_worms(self, strategy_cache_file, stock_worm_cache_file, start_day=0, end_day=60, 
+    def search_worms(self, strategy_cache_file, stock_worm_cache_file, 
+        start_day=0, end_day=60, 
         max_iter=300, is_test=False):
         if is_test == True:
             mixed_domain = self.mixed_domain_test
         else:
             mixed_domain = self.mixed_domain
 
-        self.optimize_result = OptimizeResult()
+        self.optimize_result = OptimizeResult(result_column_index=-2)
         if os.path.isfile(stock_worm_cache_file):
             self.optimize_result.load(stock_worm_cache_file)
 
@@ -87,9 +89,12 @@ class StockWormManager:
             error_mean = cached_result[3]
             print("find from cache. skip...")
         else:
-            stock_worm = self.build_stock_worm(features)
-            total_profit, profit_daily, errors_daily, best_strategy_model = stock_worm.get_profit(strategy_list, start_day, end_day)
-            stock_worm.set_strategy_model(best_strategy_model)
+            save_path = self.get_save_path(features)
+            stock_worm = StockWorm(self.stock_index, 'npy_files', save_path)
+            total_profit, profit_daily, errors_daily = stock_worm.init(features, 
+                strategy_list, start_day, end_day)
+
+
             n_days = len(profit_daily)
             profit_mean = np.mean(profit_daily)
             error_mean = np.mean(errors_daily)
@@ -118,32 +123,19 @@ class StockWormManager:
         assert(len(top_worms) == n_number)
         for i in range(n_number):
             features = top_worms[i, :13]
+            features_str = self.get_parameter_str(features)
+            save_path = md5(features_str)
+            new_worm = StockWorm(self.stock_index, 'npy_files', save_path)
+            total_profit, profit_daily, errors_daily = new_worm.init(features, strategy_list, start_day, end_day)
+            new_worm.save()
+            print("training finished for model {}, total_profit:{}".format(i, total_profit))
+            total_profit, profit_daily, errors_daily = new_worm.test()
+            print("testing finished for model {}, total_profit:{}".format(i, total_profit))
 
-
-            new_worm = self.build_stock_worm(features)
-            total_profit, profit_daily, errors_daily, best_strategy_model = stock_worm.get_profit(strategy_list, start_day, end_day)
-            
-            md5_str = self.get_md5_str(features)
-            stock_worm.save(md5_str)
-
-    def run_worms(self, stock_worm_cache_file, n_number, start_day, end_day=None):
-        # load worms.
-        optimize_result = OptimizeResult()
-        optimize_result.load(stock_worm_cache_file)
-        top_worms = optimize_result.get_best_results(n_number, by=-2)
-        for i in range(n_number):
-            features = top_worms[i, :13]
-            new_worm = self.build_stock_worm(features)
-            md5_str = self.get_md5_str(features)
-            new_worm.load(md5_str)
-
-
-
-
-    def get_md5_str(self, X):
+    def get_save_path(self, X):
         params_str = self.get_parameter_str(X)
-        return md5(params_str)
-
+        return os.path.join(self.model_save_path, md5(params_str))
+        
     def get_parameter_str(self, X):
         parameter_str = ""
         for i in range(len(self.mixed_domain)):
@@ -153,33 +145,7 @@ class StockWormManager:
             parameter_str += ','
         return parameter_str    
 
-    def build_stock_worm(self, features):
-        n_neurons = int(features[0])
-        learning_rate = features[1]
-        num_layers = int(features[2])
-        rnn_type = int(features[3])
-        learning_period = int(features[4])
-        prediction_period = int(features[5])
-        n_repeats = int(features[6])
-        beta = int(features[7])
-        ema = int(features[8])
-        time_format = int(features[9])
-        volume_input = int(features[10])
-        use_centralized_bid = int(features[11])
-        split_daily_data = int(features[12])
-
-        data_manipulator = DataManipulator(learning_period,
-                                           prediction_period,
-                                           beta, ema, 
-                                           time_format, 
-                                           volume_input, 
-                                           use_centralized_bid, 
-                                           split_daily_data, self.stock_index)
-        model = StatefulLstmModel(n_neurons, learning_rate, num_layers, rnn_type, n_repeats)
-
-        return StockWorm(self.stock_name, self.stock_index, data_manipulator, model)
-
 
 if __name__ == '__main__':
-    stock_worm_manager = StockWormManager('Nordel', 5)
-    stock_worm_manager.search_worms("strategy_cache.txt", "worm_cache.txt", is_test=False)
+    stock_worm_manager = StockWormManager('Nordel', 5, 'models')
+    stock_worm_manager.search_worms("strategy_cache.txt", "worm_cache.txt", is_test=True)
