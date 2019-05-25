@@ -47,7 +47,7 @@ class StockWorm:
                                            use_centralized_bid, 
                                            split_daily_data, 
                                            self.input_data_path)
-        
+
         data_manipulator.init_scalers(start_day_index, end_day_index)
 
         model = StatefulLstmModel(n_neurons, learning_rate, num_layers, rnn_type, n_repeats)
@@ -230,7 +230,7 @@ if __name__ == '__main__':
     strategy_list = trade_strategy_factory.create_from_file('strategy_cache.txt', 10)
     stock_worm = StockWorm(5, 'npy_files', 'my_model')
 
-    features=[60.0 , 0.004 , 1.0 , 0.0 , 20.0 , 20.0 ,  1.0 , 99.0 , 20.0,  1.0,  1.0 , 1.0 , 1.0]
+    features=[140.0  ,0.003  ,2.0 , 2.0  ,40.0 ,  5.0 , 40.0 , 99.0  ,20.0,  0.0  ,1.0 , 0.0 , 1.0]
     total_profit, profit_daily, errors_daily = stock_worm.init(features, strategy_list, 0, 60)
     print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
     stock_worm.save()
