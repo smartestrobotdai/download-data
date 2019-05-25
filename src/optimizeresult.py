@@ -101,22 +101,16 @@ class OptimizeResult:
 			self.data = self.data.reshape(1, shape[0])
 
 if __name__ == '__main__':
-	optimize_results = OptimizeResult()
-	optimize_results.insert_result([1.0,2,3], [1,2])
-	optimize_results.insert_result([2.0,3,4], [3,3])
-	optimize_results.insert_result([4.0,3,5], [3,4])
-	y, index = optimize_results.find_result([4.0000001,3,5])
-	print(y, index)
 	print("find strategies")
-	result_strategies = OptimizeResult()
+	result_strategies = OptimizeResult(-1)
 	result_strategies.load('strategy_cache.txt')
-	result_strategies.find_best_results(10, by=-1)
+	result_strategies.get_best_results(10)
 
 
 	print("find worms")
-	optimize_results = OptimizeResult()
+	optimize_results = OptimizeResult(-2)
 	optimize_results.load('worm_cache.txt')
-	optimize_results.find_best_results(100, by=-2)
+	optimize_results.get_best_results(100)
 
 
 
