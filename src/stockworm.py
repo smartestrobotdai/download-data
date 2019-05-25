@@ -45,7 +45,9 @@ class StockWorm:
                                            time_format, 
                                            volume_input, 
                                            use_centralized_bid, 
-                                           split_daily_data)
+                                           split_daily_data, 
+                                           self.input_data_path)
+        
         data_manipulator.init_scalers(start_day_index, end_day_index)
 
         model = StatefulLstmModel(n_neurons, learning_rate, num_layers, rnn_type, n_repeats)
@@ -68,11 +70,20 @@ class StockWorm:
         self.strategy_model = best_strategy_model
         return max_total_profit, max_profit_daily, errors_daily
     
+    
+    def test(self, end_day_index=None):
+        # find the start_day_index
+        assert(self.learning_end_date != None)
+        n_learning_days = self.data_manipulator.get_learning_days()
+        n_prediction_days = self.data_manipulator.get_prediction_days()
+        learning_end_day_index = self.data_manipulator.date_2_day_index(self.learning_end_date)
 
-    def test(self, start_day_index, end_day_index=None):
+
+
+        start_day_index = learning_end_day_index + 1 - n_learning_days + n_prediction_days
+
         if end_day_index is None:
             end_day_index = self.data_manipulator.get_n_days()
-            print("fetched end_day_index: {}".format(end_day_index))
 
         strategy_data_input, errors_daily = self.test_model_base(start_day_index, end_day_index)
         total_profit, profit_daily = self.strategy_model.get_profit(strategy_data_input)
@@ -210,6 +221,9 @@ class StockWorm:
         with open(self.get_strategy_model_filename(path), 'rb') as f:
             self.strategy_model = pickle.load(f)
 
+        # recover the learning_end_date
+        self.learning_end_date = load_date
+
 if __name__ == '__main__':
     from tradestrategy import TradeStrategyFactory
     trade_strategy_factory = TradeStrategyFactory()
@@ -221,15 +235,20 @@ if __name__ == '__main__':
     print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
     stock_worm.save()
 
- 
-    learning_period = features[4]
-    prediction_period = features[5]
-    start_day = 60 + prediction_period - learning_period
-    total_profit, profit_daily, errors_daily = stock_worm.test(start_day)
-    print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
+    total_profit1, profit_daily, errors_daily = stock_worm.test()
+    print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit1, profit_daily))
 
     stock_worm2 = StockWorm(5, 'npy_files', 'my_model')
     stock_worm2.load()    
 
-    total_profit, profit_daily, errors_daily = stock_worm2.test(start_day)
-    print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
+    total_profit2, profit_daily, errors_daily = stock_worm2.test()
+    print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit2, profit_daily))
+    stock_worm2.save()
+    assert(total_profit1 == total_profit2)
+
+    stock_worm3 = StockWorm(5, 'npy_files', 'my_model')
+    stock_worm3.load('190423')
+    total_profit3, profit_daily, errors_daily = stock_worm3.test()
+    assert(total_profit1 == total_profit3)
+
+
