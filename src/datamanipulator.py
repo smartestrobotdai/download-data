@@ -1,6 +1,6 @@
 import numpy as np
 from sklearn import preprocessing
-from util import remove_centralized
+from util import remove_centralized, timestamp2date
 class TimeFormat:
     NONE = 0
     DAY = 1
@@ -9,7 +9,7 @@ class TimeFormat:
 class DataManipulator:
     def __init__(self,  stock_index, n_learning_days,
                 n_prediction_days, beta, ema, time_format, volume_input, use_centralized_bid, 
-                split_daily_data):
+                split_daily_data, input_path):
         self.n_learning_days = n_learning_days
         self.n_prediction_days = n_prediction_days
         self.beta = beta
@@ -29,6 +29,7 @@ class DataManipulator:
             self.n_learning_seqs = self.n_learning_days
             self.n_prediction_seqs = self.n_prediction_days
         
+        self.input_path = input_path
         self.scaler_input = None
         self.scaler_output = None
         self.initialized = False
@@ -39,7 +40,12 @@ class DataManipulator:
     def get_prediction_seqs(self):
         return self.n_prediction_seqs
 
-    
+    def get_learning_days(self):
+        return self.n_learning_days
+
+    def get_prediction_days(self):
+        return self.n_prediction_days
+
     def volume_transform(self, volume_series):
         # all the volumes must bigger than 0
         assert(np.all(volume_series>=0))
@@ -67,9 +73,9 @@ class DataManipulator:
         return data_scaled.reshape(shape)
     
     def init_scalers(self, start_day_index, end_day_index):
-        input_path = 'npy_files'
+        input_path = self.input_path
         stock_index = self.stock_index
-        input_data, output_data, timestamp, price = self.purge_data(input_path, stock_index)
+        input_data, output_data, timestamp, price = self.purge_data()
         start_seq_index = self.day_index_2_seq_index(start_day_index)
         end_seq_index = self.day_index_2_seq_index(end_day_index)
         self.scaler_input = self.build_scaler(input_data[start_seq_index:end_seq_index])
@@ -85,7 +91,7 @@ class DataManipulator:
 
 
     def get_n_days(self):
-        input_path = 'npy_files'
+        input_path = self.input_path
         stock_index = self.stock_index
         npy_file_name = input_path + "/ema{}_beta{}_{}.npy".format(self.ema, self.beta, stock_index)
         input_np_data = np.load(npy_file_name, allow_pickle=True)
@@ -93,7 +99,9 @@ class DataManipulator:
         return n_days
 
     # to purge data based on parameters like time_input, split_daily_data, etc.
-    def purge_data(self, input_path, stock_index):
+    def purge_data(self):
+        input_path = self.input_path
+        stock_index = self.stock_index
         # load numpy file
         npy_file_name = input_path + "/ema{}_beta{}_{}.npy".format(self.ema, self.beta, stock_index)
         input_np_data = np.load(npy_file_name, allow_pickle=True)
@@ -136,26 +144,30 @@ class DataManipulator:
     
     def prep_data(self, start_day_index, end_day_index):
         assert(self.initialized)
-        input_path = 'npy_files'
-        stock_index = self.stock_index
-        input_data, output_data, timestamp, price = self.purge_data(input_path, stock_index)
+        input_data, output_data, timestamp, price = self.purge_data()
 
         if end_day_index is None:
             end_day_index = n_days
         # to scale the data, but not the timestamp and price
         start = self.day_index_2_seq_index(start_day_index)
         end = self.day_index_2_seq_index(end_day_index)
-
-
-        print("TEST!!!")
-        print(start)
-        print(end)
         data_input = self.transform_input(input_data[start:end])
         data_output = self.transform_output(output_data[start:end])
         timestamp = timestamp[start:end]
         price = price[start:end]
         return data_input, data_output, timestamp, price
     
+    def date_2_day_index(self, date):
+        input_path = self.input_path
+        stock_index = self.stock_index
+        npy_file_name = input_path + "/ema{}_beta{}_{}.npy".format(self.ema, self.beta, stock_index)
+        input_np_data = np.load(npy_file_name, allow_pickle=True)
+        timestamps = input_np_data[:,:,5]
+        for i in range(len(timestamps)):
+            if timestamp2date(timestamps[i][0]) == date:
+                return i
+        return None
+
     def day_index_2_seq_index(self, day_index):
         if self.split_daily_data == True:
             return int(day_index * 2)
