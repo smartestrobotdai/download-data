@@ -134,6 +134,9 @@ class DataManipulator:
         if self.use_centralized_bid == 0:
             # remove all the rows for centralized bid. it should be from 9.01 to 17.24, which is 516-12=504 steps
             input_data = remove_centralized(input_data)
+            output_data = remove_centralized(output_data)
+            timestamp = remove_centralized(timestamp)
+            price = remove_centralized(price)
             
         input_data = self.daily_data_2_seq_data(input_data)
         output_data = self.daily_data_2_seq_data(output_data)
