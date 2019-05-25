@@ -16,7 +16,7 @@ from util import md5
 class StockWormManager:
     mixed_domain = [{'name': 'n_neurons', 'type': 'discrete', 'domain': tuple(range(20,160,20))},
       {'name': 'learning_rate', 'type': 'discrete', 'domain': (0.001,0.002,0.003,0.004)},
-      {'name': 'num_layers', 'type': 'discrete', 'domain': (1,2,3,4)},
+      {'name': 'num_layers', 'type': 'discrete', 'domain': (1,2,3,4,5,6)},
       {'name': 'rnn_type', 'type': 'discrete', 'domain': (0,1,2)},
       {'name': 'learning_period', 'type': 'discrete', 'domain': (20,30,40)},
       {'name': 'prediction_period', 'type': 'discrete', 'domain': (2,5,10,20)},
@@ -26,7 +26,7 @@ class StockWormManager:
       {'name': 'time_format', 'type': 'discrete', 'domain': (0,1,2)}, #1 for stepofday, 2 for stepofweek
       {'name': 'volume_input', 'type': 'discrete', 'domain': (0,1)},
       {'name': 'use_centralized_bid', 'type': 'discrete', 'domain': (0,1)},
-      {'name': 'split_daily_data', 'type': 'discrete', 'domain': (0,1)}
+      {'name': 'split_daily_data', 'type': 'discrete', 'domain': (1,)}
      ]
 
     mixed_domain_test = [{'name': 'n_neurons', 'type': 'discrete', 'domain': tuple(range(20,160,20))},
