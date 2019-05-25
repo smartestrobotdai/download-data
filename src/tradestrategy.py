@@ -224,15 +224,6 @@ class TradeStrategy:
     
     def get_save_filename(self, path):
         return os.path.join(path, 'strategy_desc.pkl')
-    
-    def save(self, save_path):
-        assert(self.trade_strategy_desc != None)
-        with open(self.get_save_filename(save_path), 'wb') as f:
-            pickle.dump(self.trade_strategy_desc, f, pickle.HIGHEST_PROTOCOL)
-            
-    def load(self, save_path):
-        with open(self.get_save_filename(save_path), 'rb') as f:
-            self.trade_strategy_desc = pickle.load(f)
 
 if __name__ == '__main__':
     print("start testing")

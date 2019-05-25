@@ -10,3 +10,6 @@ def md5(in_str):
 def remove_centralized(data):
 	assert(data.shape[1]==516)
 	return data[:,7:-5]
+
+def timestamp2date(timestamp):
+	return timestamp.date().strftime("%y%m%d")

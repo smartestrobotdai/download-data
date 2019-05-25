@@ -7,9 +7,9 @@ class TimeFormat:
     WEEK = 2
 
 class DataManipulator:
-    def __init__(self,  n_learning_days,
+    def __init__(self,  stock_index, n_learning_days,
                 n_prediction_days, beta, ema, time_format, volume_input, use_centralized_bid, 
-                split_daily_data, stock_index):
+                split_daily_data):
         self.n_learning_days = n_learning_days
         self.n_prediction_days = n_prediction_days
         self.beta = beta
@@ -31,13 +31,14 @@ class DataManipulator:
         
         self.scaler_input = None
         self.scaler_output = None
-    
-    def update(self, next_prediction_seq, last_learning_date):
-        assert(last_learning_date != None)
-        print("updating, next_prediction_seq={}, last_learning_date={}".format(next_prediction_seq, last_learning_date))
-        self.next_prediction_seq = next_prediction_seq
-        self.next_learning_seq = next_prediction_seq - self.n_learning_seqs
-        self.last_learning_date = last_learning_date
+        self.initialized = False
+
+    def get_learning_seqs(self):
+        return self.n_learning_seqs
+
+    def get_prediction_seqs(self):
+        return self.n_prediction_seqs
+
     
     def volume_transform(self, volume_series):
         # all the volumes must bigger than 0
@@ -52,10 +53,6 @@ class DataManipulator:
         outputs = self.scaler_output.inverse_transform(outputs_reshaped)
         return outputs.reshape(ori_shape)
     
-    def transform(self, data, n_inputs, n_outputs):
-        input_scaled = self.transform_input(data[:,:,:n_inputs])
-        output_scaled = self.transform_output(data[:,:,-n_outputs:])
-        return input_scaled, output_scaled
     
     def transform_input(self, data_input):
         return self.transform_helper(self.scaler_input, data_input)
@@ -69,32 +66,38 @@ class DataManipulator:
         data_scaled = scaler.transform(data)
         return data_scaled.reshape(shape)
     
-    # do fit and transform at same time
-    def fit_transform(self, data_all, n_inputs, n_outputs):
-        orig_shape = data_all.shape
-        data_train_reshape = data_all.astype('float').reshape((orig_shape[0] * orig_shape[1], orig_shape[2]))
-        
-        self.scaler_input = preprocessing.MinMaxScaler().fit(data_train_reshape[:,:n_inputs])
-        data_train_input_scaled = self.scaler_input.transform(data_train_reshape[:,:n_inputs])
-        
-        # the invalid step, we change it to zero!
-        data_train_input_scaled[~np.any(data_train_reshape, axis=1)] = 0
-        data_train_input = data_train_input_scaled.reshape(orig_shape[0], orig_shape[1], n_inputs)
-        
-        self.scaler_output = preprocessing.MinMaxScaler().fit(data_train_reshape[:,-n_outputs:])
-        data_train_output_scaled = self.scaler_output.transform(data_train_reshape[:,-n_outputs:])
-        # the invalid step, we change it to zero!
-        data_train_output_scaled[~np.any(data_train_reshape, axis=1)] = 0
-        data_train_output = data_train_output_scaled.reshape(orig_shape[0], orig_shape[1], n_outputs)
-        
-        return data_train_input, data_train_output
+    def init_scalers(self, start_day_index, end_day_index):
+        input_path = 'npy_files'
+        stock_index = self.stock_index
+        input_data, output_data, timestamp, price = self.purge_data(input_path, stock_index)
+        start_seq_index = self.day_index_2_seq_index(start_day_index)
+        end_seq_index = self.day_index_2_seq_index(end_day_index)
+        self.scaler_input = self.build_scaler(input_data[start_seq_index:end_seq_index])
+        self.scaler_output = self.build_scaler(output_data[start_seq_index:end_seq_index])
+        self.initialized = True
+        return
+
+    def build_scaler(self, data):
+        shape = data.shape
+        assert(len(shape)==3)
+        data = data.reshape((shape[0]*shape[1],shape[2]))
+        return preprocessing.MinMaxScaler().fit(data)
+
+
+    def get_n_days(self):
+        input_path = 'npy_files'
+        stock_index = self.stock_index
+        npy_file_name = input_path + "/ema{}_beta{}_{}.npy".format(self.ema, self.beta, stock_index)
+        input_np_data = np.load(npy_file_name, allow_pickle=True)
+        n_days = input_np_data.shape[0]
+        return n_days
 
     # to purge data based on parameters like time_input, split_daily_data, etc.
     def purge_data(self, input_path, stock_index):
         # load numpy file
         npy_file_name = input_path + "/ema{}_beta{}_{}.npy".format(self.ema, self.beta, stock_index)
         input_np_data = np.load(npy_file_name, allow_pickle=True)
-            
+        n_days = input_np_data.shape[0]
         # the diff is the mandatory
         input_columns = [2]
         
@@ -107,51 +110,86 @@ class DataManipulator:
         
         if self.volume_input == 1:
             input_columns += [3]
-        
-        output_columns = [4]
-        timestamp_column = [5]
-        price_column = [6]
-        input_np_data = input_np_data[:,:,input_columns + output_columns + timestamp_column + price_column]
-        
+    
+
+        input_data = input_np_data[:,:,input_columns]
+
         # we must tranform the volume for it is too big.
         if self.volume_input == 1:
-            input_np_data[:,:,-4] = self.volume_transform(input_np_data[:,:,-4])
+            input_data[:,:,-1] = self.volume_transform(input_data[:,:,-1])
+
+        # output_data must be in shape (day, step, 1)
+        output_data = input_np_data[:,:,4:5]
+        timestamp = input_np_data[:,:,5]
+        price = input_np_data[:,:,6]
         
         if self.use_centralized_bid == 0:
             # remove all the rows for centralized bid. it should be from 9.01 to 17.24, which is 516-12=504 steps
-            input_np_data = remove_centralized(input_np_data)
+            input_data = remove_centralized(input_data)
             
-            
-        shape = input_np_data.shape
-        if self.split_daily_data == 1:
-            assert(shape[1] % 2 == 0)
-            input_np_data = input_np_data.reshape((shape[0]*2, 
-                                                  int(shape[1]/2), 
-                                                  shape[2]))
-            # get the first date and last date
+        input_data = self.daily_data_2_seq_data(input_data)
+        output_data = self.daily_data_2_seq_data(output_data)
+        timestamp = self.daily_data_2_seq_data(timestamp)
+        price = self.daily_data_2_seq_data(price)
         
-        return input_np_data, input_columns
+        return input_data, output_data, timestamp, price
     
-    def prep_training_data(self, start_day_index, end_day_index):
+    def prep_data(self, start_day_index, end_day_index):
+        assert(self.initialized)
         input_path = 'npy_files'
         stock_index = self.stock_index
-        input_np_data, input_columns = self.purge_data(input_path, stock_index)
+        input_data, output_data, timestamp, price = self.purge_data(input_path, stock_index)
+
+        if end_day_index is None:
+            end_day_index = n_days
         # to scale the data, but not the timestamp and price
-        if self.split_daily_data == True:
-            start = start_day_index * 2
-            end = end_day_index * 2
-        else:
-            start = start_day_index
-            end = end_day_index
-            
-        data_train_input, data_train_output = self.fit_transform(input_np_data[start:end,:,:-2], len(input_columns), 1)
-        return data_train_input, data_train_output, input_np_data[start:end,:,-2], input_np_data[start:end,:,-1]
+        start = self.day_index_2_seq_index(start_day_index)
+        end = self.day_index_2_seq_index(end_day_index)
+
+
+        print("TEST!!!")
+        print(start)
+        print(end)
+        data_input = self.transform_input(input_data[start:end])
+        data_output = self.transform_output(output_data[start:end])
+        timestamp = timestamp[start:end]
+        price = price[start:end]
+        return data_input, data_output, timestamp, price
     
-    def prep_testing_data(self, input_path, stock_index):
-        input_path = 'npy_files'
-        stock_index = self.stock_index
-        input_np_data, n_training_sequences, input_columns = self.purge_data(input_path, stock_index)
-        test_start_seq = self.next_prediction_seq - self.n_learning_seqs
-        data_test_input, data_test_output = self.transform(input_np_data[test_start_seq:,:,:-2], len(input_columns), 1)
-        return data_test_input, data_test_output, input_np_data[test_start_seq:,:,-2], input_np_data[test_start_seq:,:,-1]
+    def day_index_2_seq_index(self, day_index):
+        if self.split_daily_data == True:
+            return int(day_index * 2)
+        else:
+            return day_index
+
+    def daily_data_2_seq_data(self, daily_data):
+        if self.split_daily_data == False:
+            return daily_data
+        shape = daily_data.shape
+        if len(shape) == 3:
+            return daily_data.reshape((shape[0]*2, int(shape[1]/2), shape[2]))
+        elif len(shape) == 2:
+            return daily_data.reshape((shape[0]*2, int(shape[1]/2)))
+        else:
+            assert(False)
+
+    def seq_data_2_daily_data(self, seq_data, is_remove_centralized=False):
+        if self.split_daily_data == 0:
+            daily_arr = seq_data
+        else:
+            shape = seq_data.shape
+            n_days = int(shape[0] / 2)
+            n_steps = shape[1] * 2
+            n_columns = shape[2]
+            daily_arr = seq_data.reshape((n_days, n_steps, n_columns))
+
+        # remove the centralized bid part of data.
+        # from 9:01 to 17:24
+        if is_remove_centralized == True:
+            if daily_arr.shape[1] == 516:
+                daily_arr = remove_centralized(daily_arr)
+
+            assert(daily_arr.shape[1]==504)
+
+        return daily_arr
     

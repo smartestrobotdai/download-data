@@ -100,7 +100,7 @@ if __name__ == '__main__':
 	print("find worms")
 	optimize_results = OptimizeResult()
 	optimize_results.load('worm_cache.txt')
-	optimize_results.find_best_results(30, by=-2)
+	optimize_results.find_best_results(100, by=-2)
 
 
 

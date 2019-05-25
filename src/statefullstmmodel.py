@@ -2,6 +2,8 @@ import tensorflow as tf
 import numpy as np
 import copy
 import datetime
+import os.path
+import pickle
 
 class NetAttributes:
     def __init__(self, n_neurons = 100, 
@@ -44,6 +46,9 @@ class StatefulLstmModel:
         self.model_initialized = False
         self.sess = None
     
+    def is_initialized(self):
+        return self.model_initialized
+
     def __del__(self):
         if self.sess != None:
             self.sess.close()
@@ -116,8 +121,10 @@ class StatefulLstmModel:
         batch_size = 1
         days = data_train_input.shape[0]
         
-        self.reset_graph()
-        self.create_model()
+        if self.is_initialized() == False:
+            self.reset_graph()
+            self.create_model()
+
         my_loss_train_list = []
         sess = tf.Session()
         # TODO: load from file.
@@ -237,7 +244,7 @@ class StatefulLstmModel:
             self.net_states = pickle.load(f)
         
         # 2. restore graph
-        if self.model_initialized == False:
+        if self.is_initialized() == False:
             self.reset_graph()
             self.create_model()
         
