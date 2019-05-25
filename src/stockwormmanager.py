@@ -148,4 +148,4 @@ class StockWormManager:
 
 if __name__ == '__main__':
     stock_worm_manager = StockWormManager('Nordel', 5, 'models')
-    stock_worm_manager.search_worms("strategy_cache.txt", "worm_cache.txt", is_test=True)
+    stock_worm_manager.search_worms("strategy_cache.txt", "worm_cache.txt", is_test=False)
