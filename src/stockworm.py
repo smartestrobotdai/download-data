@@ -7,6 +7,8 @@ import pickle
 from datamanipulator import DataManipulator
 from statefullstmmodel import StatefulLstmModel
 from util import remove_centralized, timestamp2date
+import matplotlib.pyplot as plt
+import datetime
 
 class StockWorm:
     def __init__(self, stock_index, input_data_path, save_path):
@@ -17,6 +19,7 @@ class StockWorm:
 
         self.last_learning_day_index = None
         self.learning_end_date = None
+        self.historic_data = None
 
     def create_if_not_exist(self, path):
         if not os.path.isdir(path):
@@ -59,15 +62,19 @@ class StockWorm:
         max_total_profit = -1
         max_profit_daily = None
         best_strategy_model = None
+        best_change_rate = None
         assert(len(strategy_model_list)>0)
         for strategy_model in strategy_model_list:
-          total_profit, profit_daily = strategy_model.get_profit(strategy_data_input)
+          total_profit, profit_daily, change_rate = strategy_model.get_profit(strategy_data_input)
           if total_profit > max_total_profit:
             max_total_profit = total_profit
             max_profit_daily = profit_daily
             best_strategy_model = strategy_model
+            best_change_rate = change_rate
 
         self.strategy_model = best_strategy_model
+        self.historic_data = np.concatenate((strategy_data_input, change_rate), axis=2)
+
         return max_total_profit, max_profit_daily, errors_daily
     
     
@@ -86,7 +93,12 @@ class StockWorm:
             end_day_index = self.data_manipulator.get_n_days()
 
         strategy_data_input, errors_daily = self.test_model_base(start_day_index, end_day_index)
-        total_profit, profit_daily = self.strategy_model.get_profit(strategy_data_input)
+        total_profit, profit_daily, change_rate = self.strategy_model.get_profit(strategy_data_input)
+
+
+        historic_data = np.concatenate((strategy_data_input, change_rate), axis=2)
+        assert(self.historic_data is not None)
+        self.historic_data = np.concatenate((self.historic_data, historic_data), axis=0)
 
         return total_profit, profit_daily, errors_daily
 
@@ -173,6 +185,9 @@ class StockWorm:
     def get_strategy_model_filename(self, path):
         return os.path.join(path, 'strategy.pkl')
 
+    def get_historic_data_filename(self, path, learning_end_date):
+        return os.path.join(path, learning_end_date, 'historic_data.npy')
+
     def save(self):
         assert(self.learning_end_date != None)
         path = self.save_path
@@ -188,7 +203,9 @@ class StockWorm:
         filename = self.get_strategy_model_filename(path)
         with open(filename, 'wb') as f:
             pickle.dump(self.strategy_model, f, pickle.HIGHEST_PROTOCOL)
-    
+        
+        filename = self.get_historic_data_filename(path, self.learning_end_date)
+        np.save(filename, self.historic_data)
     
     def get_latest_dir(self, save_path):
         all_subdirs = [d for d in os.listdir(save_path) if os.path.isdir(os.path.join(save_path, d))]
@@ -223,6 +240,40 @@ class StockWorm:
 
         # recover the learning_end_date
         self.learning_end_date = load_date
+        filename = self.get_historic_data_filename(path, load_date)
+        self.historic_data = np.load(filename, allow_pickle=True)
+
+    def get_daily_data(self):
+        stock_change_rate = self.historic_data[:,:,3]
+        asset_change_rate = self.historic_data[:,:,4]
+        daily_stock_change_rate = np.prod(stock_change_rate+1, axis=1) - 1
+        daily_asset_change_rate = np.prod(asset_change_rate+1, axis=1) - 1
+        date = self.historic_data[:,0,0]
+        return np.stack((date, daily_stock_change_rate, daily_asset_change_rate), axis=1)
+
+    def get_accumulate_data(self, data):
+        output_data = []
+        tot = 1
+        for i in range(len(data)):
+            tot = tot * (1+data[i])
+            output_data.append(tot)
+        print(output_data)
+        return output_data
+
+    def plot(self):
+        assert(self.historic_data is not None)
+        daily_data = self.get_daily_data()
+        print("preparing plotting")
+        print(daily_data.shape)
+        
+        x = daily_data[:,0]
+        y = self.get_accumulate_data(daily_data[:,1])
+        z = self.get_accumulate_data(daily_data[:,2])
+
+        plt.plot(x,y)
+        plt.plot(x,z)
+        plt.show()
+
 
 if __name__ == '__main__':
     from tradestrategy import TradeStrategyFactory
@@ -230,7 +281,7 @@ if __name__ == '__main__':
     strategy_list = trade_strategy_factory.create_from_file('strategy_cache.txt', 10)
     stock_worm = StockWorm(5, 'npy_files', 'my_model')
 
-    features=[140.0  ,0.003  ,2.0 , 2.0  ,40.0 ,  5.0 , 40.0 , 99.0  ,20.0,  0.0  ,1.0 , 0.0 , 1.0]
+    features=[60.0 , 0.004 , 1.0 , 0.0 , 20.0 , 20.0 ,  1.0 , 99.0,  20.0 , 1.0,  1.0 , 1.0,  1.0]
     total_profit, profit_daily, errors_daily = stock_worm.init(features, strategy_list, 0, 60)
     print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
     stock_worm.save()
@@ -246,9 +297,6 @@ if __name__ == '__main__':
     stock_worm2.save()
     assert(total_profit1 == total_profit2)
 
-    stock_worm3 = StockWorm(5, 'npy_files', 'my_model')
-    stock_worm3.load('190423')
-    total_profit3, profit_daily, errors_daily = stock_worm3.test()
-    assert(total_profit1 == total_profit3)
+    stock_worm2.plot()
 
 
