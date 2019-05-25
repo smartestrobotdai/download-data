@@ -134,10 +134,10 @@ class TradeStrategy:
 
     def get_profit(self,  input_data, verbose=False):
         X_list = self.to_list()
-        tot_profit, n_tot_trades, daily_profit_list, _, _ = self.run_test_core(X_list, 
+        tot_profit, n_tot_trades, daily_profit_list, change_rate = self.run_test_core(X_list, 
                                                                                 input_data, 
                                                                                 verbose)
-        return tot_profit, daily_profit_list
+        return tot_profit, daily_profit_list, change_rate
 
 
     def run_test_core(self, X_list, input_data, verbose=False):
@@ -155,11 +155,11 @@ class TradeStrategy:
         n_tot_trades = 0
         # to prepare the result data
         shape = input_data.shape
-
-        reshaped_price = input_data[:,:,2].reshape((shape[0]*shape[1]))
+        price_data = input_data[:,:,2]
+        reshaped_price = price_data.reshape((shape[0]*shape[1]))
         
         stock_change_rate = np.diff(reshaped_price) / reshaped_price[:-1]
-        stock_change_rate = np.concatenate(([0], stock_change_rate)).reshape((shape[0],shape[1],1))
+        stock_change_rate = np.concatenate(([0], stock_change_rate)).reshape((shape[0],shape[1]))
         
         asset_change_rate = np.zeros((stock_change_rate.shape))
         
@@ -174,17 +174,20 @@ class TradeStrategy:
             state = 0
             daily_data = input_data[day_idx]
             hold_steps = 0
+
             for step in range(len(daily_data)):
+
+
                 time = daily_data[step][0]
                 value = daily_data[step][1]
                 price = daily_data[step][2]
-                change_rate = stock_change_rate[day_idx][step][0]
+                change_rate = stock_change_rate[day_idx][step]
                 if state == 0 and time.time().hour >= 9 and \
                     n_trades < n_max_trades and \
                     step < len(daily_data)-5 and \
                     value > buy_threshold:
                         state = 1
-                        asset_change_rate[day_idx][step][0] = -cost
+                        asset_change_rate[day_idx][step] = -cost
                         tot_profit *= (1-cost)
                         daily_profit *= (1-cost)
                         trade_profit *= (1-cost)
@@ -204,7 +207,9 @@ class TradeStrategy:
                         daily_profit *= (1 + change_rate)
                         state = 0
                         n_trades += 1
-                        print_verbose("sell at step: {} price:{} trade_profit:{} hold_steps:{}".format(step, price, trade_profit, hold_steps))
+                        print_verbose("sell at step: {} price:{} trade_profit:{} hold_steps:{}".format(step, 
+                            price, trade_profit, hold_steps))
+
                         trade_profit = 1
                         asset_change_rate[day_idx][step] = change_rate
                         hold_steps = 0
@@ -213,14 +218,15 @@ class TradeStrategy:
                         tot_profit *= (1+change_rate)
                         daily_profit *= (1+change_rate)
                         trade_profit *= (1+change_rate)
-                        asset_change_rate[day_idx][step][0] = change_rate
+                        asset_change_rate[day_idx][step] = change_rate
                         hold_steps += 1
             print_verbose("finished day {}, daily profit:{}".format(day_idx,daily_profit))
             daily_profit_list.append(daily_profit - 1)
             n_tot_trades += n_trades
         
         tot_profit -= 1
-        return tot_profit, n_tot_trades, daily_profit_list, stock_change_rate, asset_change_rate
+        change_rate = np.stack((stock_change_rate, asset_change_rate), axis=2)
+        return tot_profit, n_tot_trades, daily_profit_list, change_rate
     
     def get_save_filename(self, path):
         return os.path.join(path, 'strategy_desc.pkl')
