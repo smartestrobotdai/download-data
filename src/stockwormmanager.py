@@ -68,10 +68,15 @@ class StockWormManager:
 
         self.stock_worm_cache_file = stock_worm_cache_file
 
-        trade_strategy_factory = TradeStrategyFactory()
         strategy_cache_file = self.get_strategy_cache_file(start_day_index, end_day_index)
-        print(strategy_cache_file)
-        strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
+        trade_strategy_factory = TradeStrategyFactory(cache_file=strategy_cache_file)
+
+        if not os.path.isfile(strategy_cache_file):
+            print("Cannot find strategy cache:{}, generating...")
+            strategy_list = trade_strategy_factory.create_trade_strategies(5)
+        else:
+            print("Find strategy_cache:{}, loading...")
+            strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
 
         opt_func = partial(self.opt_func, strategy_list, start_day_index, end_day_index)
 
