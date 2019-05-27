@@ -13,5 +13,5 @@ is_test = False
 if len(sys.argv) == 4:
 	is_test = bool(sys.argv[3])
 
-stock_worm_manager = StockWormManager('Nordel', 5, '../../models', '../../preprocessed-data')
+stock_worm_manager = StockWormManager('Nordea', 5, '../../models', '../../preprocessed-data')
 stock_worm_manager.search_worms(0, 60, is_test=is_test)

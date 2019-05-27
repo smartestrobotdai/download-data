@@ -62,6 +62,7 @@ class StockWormManager:
 
         if os.path.isfile(stock_worm_cache_file):
             self.optimize_result.load(stock_worm_cache_file)
+            print("stock worm cache loaded, size={}".format(self.optimize_result.get_size()))
         else:
             print("cannot find file cache:{}, will create new cache.".format(stock_worm_cache_file))
 
@@ -69,6 +70,7 @@ class StockWormManager:
 
         trade_strategy_factory = TradeStrategyFactory()
         strategy_cache_file = self.get_strategy_cache_file(start_day_index, end_day_index)
+        print(strategy_cache_file)
         strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
 
         opt_func = partial(self.opt_func, strategy_list, start_day_index, end_day_index)
