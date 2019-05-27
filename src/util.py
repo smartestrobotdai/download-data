@@ -1,5 +1,6 @@
 import hashlib
 import os.path
+import numpy as np
 
 def md5(in_str):
 	m = hashlib.sha256()
@@ -11,6 +12,15 @@ def md5(in_str):
 def remove_centralized(data):
 	assert(data.shape[1]==516)
 	return data[:,7:-5]
+
+def add_centralized(data):
+	assert(data.shape[1]==504)
+	data_before = np.zeros((data.shape[0], 7))
+	data_after = np.zeros((data.shape[0], 5))
+	data = np.concatenate((data_before, data, data_after), axis=1)
+	assert(data.shape[1]==516)
+	return data
+
 
 def timestamp2date(timestamp):
 	return timestamp.date().strftime("%y%m%d")
