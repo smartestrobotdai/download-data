@@ -44,10 +44,11 @@ class StockWormManager:
       {'name': 'split_daily_data', 'type': 'discrete', 'domain': (0,1)}
      ]
 
-    def __init__(self, stock_name, stock_index, model_save_path):
+    def __init__(self, stock_name, stock_index, model_save_path, npy_files_path):
         self.stock_name = stock_name
         self.stock_index = stock_index
         self.model_save_path = model_save_path
+        self.npy_files_path = npy_files_path
 
     def search_worms(self, strategy_cache_file, stock_worm_cache_file, 
         start_day=0, end_day=60, 
@@ -90,7 +91,7 @@ class StockWormManager:
             print("find from cache. skip...")
         else:
             save_path = self.get_save_path(features)
-            stock_worm = StockWorm(self.stock_index, 'npy_files', save_path)
+            stock_worm = StockWorm(self.stock_index, self.npy_files_path, save_path)
             total_profit, profit_daily, errors_daily = stock_worm.init(features, 
                 strategy_list, start_day, end_day)
 
@@ -111,25 +112,28 @@ class StockWormManager:
 
         return np.array(profit_mean).reshape((1,1))
 
-    def create_worms_from_cache(self, strategy_cache_file, stock_worm_cache_file, n_number,
-            start_day, end_day):
-        optimize_result = OptimizeResult()
-        optimize_result.load(stock_worm_cache_file)
-        top_worms = optimize_result.get_best_results(n_number, by=-2)
+    def create_worms_from_cache(self, n_number, start_day_index, end_day_index):
+        swarm_path = os.path.join(self.model_save_path, "{}-{}".format(start_day_index, end_day_index))
+        optimize_result = OptimizeResult(result_column_index=13)
+        stockworm_cache_file = os.path.join(swarm_path, "worm_cache.txt")
+        optimize_result.load(stockworm_cache_file)
+        top_worms = optimize_result.get_best_results(n_number)
 
         trade_strategy_factory = TradeStrategyFactory()
-        strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 5)
+        strategy_cache_file = os.path.join(swarm_path, "strategy_cache.txt")
+        strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
 
         assert(len(top_worms) == n_number)
         for i in range(n_number):
             features = top_worms[i, :13]
             features_str = self.get_parameter_str(features)
-            save_path = md5(features_str)
-            new_worm = StockWorm(self.stock_index, 'npy_files', save_path)
-            total_profit, profit_daily, errors_daily = new_worm.init(features, strategy_list, start_day, end_day)
+            model_save_path = os.path.join(swarm_path, md5(features_str))
+            new_worm = StockWorm(self.stock_index, self.npy_files_path, model_save_path)
+            total_profit, profit_daily, errors_daily = new_worm.init(features, strategy_list, start_day_index, end_day_index)
             new_worm.save()
             print("training finished for model {}, total_profit:{}".format(i, total_profit))
             total_profit, profit_daily, errors_daily = new_worm.test()
+            new_worm.save()
             print("testing finished for model {}, total_profit:{}".format(i, total_profit))
 
     def get_save_path(self, X):
@@ -148,4 +152,5 @@ class StockWormManager:
 
 if __name__ == '__main__':
     stock_worm_manager = StockWormManager('Nordel', 5, 'models')
-    stock_worm_manager.search_worms("strategy_cache.txt", "worm_cache.txt", is_test=False)
+    stock_worm_manager.search_worms("../models/190128-190423/strategy_cache.txt", "../models/190128-190423/worm_cache.txt", 0, 60, is_test=False)
+    stock_worm_manager.create_from_file()

@@ -232,7 +232,6 @@ class TradeStrategy:
         return os.path.join(path, 'strategy_desc.pkl')
 
 if __name__ == '__main__':
-    print("start testing")
     # trade_strategy_factory = TradeStrategyFactory()
     # strategy_list = trade_strategy_factory.create_from_file("test.txt", 5)
     # assert(len(strategy_list)==5)

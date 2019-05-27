@@ -259,7 +259,7 @@ class StockWorm:
         plt.gca().xaxis.set_major_formatter(dates.DateFormatter('%m-%d'))
         #plt.gca().xaxis.set_major_locator(dates.DateLocator())
         
-        #plt.gcf().autofmt_xdate()
+        plt.gcf().autofmt_xdate()
 
         x2 = daily_data[training_data_length:, 0]
         y2 = np.cumprod(daily_data[training_data_length:, 1])
@@ -270,8 +270,24 @@ class StockWorm:
         plt.plot(x2,z2)
         plt.gca().xaxis.set_major_formatter(dates.DateFormatter('%m-%d'))
         #plt.gca().xaxis.set_major_locator(dates.DateLocator())
-        #plt.gcf().autofmt_xdate()
+        plt.gcf().autofmt_xdate()
         plt.show()
+
+    def plot_day_index(self, day_index):
+        y1 = np.cumprod(self.historic_data[day_index,:,3]+1)
+        z1 = np.cumprod(self.historic_data[day_index,:,4]+1)
+        x1 = self.historic_data[day_index, :, 0]
+
+        plt.plot(x1,y1)
+        plt.plot(x1,z1)
+        plt.gcf().autofmt_xdate()
+        plt.show()
+
+    def plot_date(self, date):
+        day_index = self.data_manipulator.get_historic_day_index(date)
+        print("Plotting date:{} day index: {}".format(date, day_index))
+        assert(day_index is not None)
+        self.plot_day_index(day_index)
 
 
 if __name__ == '__main__':

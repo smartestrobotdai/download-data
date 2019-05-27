@@ -178,6 +178,13 @@ class DataManipulator:
                 return i
         return None
 
+
+    def get_historic_day_index(self, date):
+        day_index = self.date_2_day_index(date)
+        assert(day_index is not None)
+        assert(day_index > self.get_learning_days())
+        return day_index - self.get_learning_days()
+
     def day_index_2_seq_index(self, day_index):
         if self.split_daily_data == True:
             return int(day_index * 2)
