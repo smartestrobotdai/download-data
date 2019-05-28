@@ -287,8 +287,8 @@ class StockWorm:
         training_total_profit = np.prod(data[:training_data_length, 2]) - 1
         testing_total_profit = np.prod(data[training_data_length:, 2]) - 1
         return training_total_profit, \
-                data[:training_data_length, 1] - 1, testing_total_profit, \
-                data[training_data_length:, 1] - 1
+                data[:training_data_length, 2] - 1, testing_total_profit, \
+                data[training_data_length:, 2] - 1
 
     def report(self):
         training_total_profit, training_daily_profit, \
@@ -311,9 +311,6 @@ class StockWorm:
         x1 = daily_data[:training_data_length,0]
         y1 = np.cumprod(daily_data[:training_data_length,1])
         z1 = np.cumprod(daily_data[:training_data_length,2])
-        print(x1)
-        print(y1)
-        print(z1)
 
         plt.subplot(2, 1, 1)
         plt.plot(x1,y1)
