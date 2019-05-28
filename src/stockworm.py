@@ -19,15 +19,11 @@ class StockWorm:
         self.stock_index = stock_index 
         self.input_data_path = input_data_path
         self.save_path = save_path
-        self.create_if_not_exist(save_path)
+        
 
         self.last_learning_day_index = None
         self.learning_end_date = None
         self.historic_data = None
-
-    def create_if_not_exist(self, path):
-        if not os.path.isdir(path):
-            os.mkdir(path)
 
     def init(self, features, strategy_model_list, start_day_index, end_day_index):
         n_neurons = int(features[0])
@@ -226,6 +222,7 @@ class StockWorm:
 
     def save(self):
         assert(self.learning_end_date != None)
+        self.create_if_not_exist(self.save_path)
         path = self.save_path
         # what is the last training date?
         self.model.save(path, self.learning_end_date)
