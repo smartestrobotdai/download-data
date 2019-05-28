@@ -184,8 +184,8 @@ for s_id in stock_tuple:
         df_merged = df_merged.append(df)
     
     
-    for ema in (1, 5, 10, 20):
-        for beta in (99, 98):
+    for ema in (20):
+        for beta in (99):
             print("Saving to files for stock id:{} ema:{} beta:{}".format(s_id, ema, beta))
             npy_filename = npy_save_path + "ema{}_beta{}_{}.npy".format(ema, beta, s_id)
             groups = df_merged.set_index('timestamp').groupby(lambda x: x.date())

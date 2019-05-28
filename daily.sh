@@ -26,7 +26,7 @@ cd data-sink/
 node daily.js>>${LOG_FILE} 2>&1
 node minute.js>>${LOG_FILE} 2>&1
 if [ $? -ne 0 ]; then
-  echo "fetching data failed"
+  echo "fetching data failed">>${LOG_FILE}
   cd $DIR
   exit -1
 fi
@@ -52,7 +52,18 @@ echo "`date` daily task finished">>${LOG_FILE}
 docker-compose down
 sleep 5
 
-cd data-analytics
-/usr/bin/python3 omx30-prep.py >> ${LOG_FILE}
+cd src/tools
+/usr/bin/python3 -u omx30-prep.py >> ${LOG_FILE}
+if [ $? -ne 0 ]; then
+  echo "preprocess data failed">>${LOG_FILE}
+  cd $DIR
+  exit -1
+fi
+
+cd ${DIR}
+git add preprocessed-data/*.npy
+git commit -m "new preprocessed-data"
+git push
+
 
 cd ${ORI_DIR}

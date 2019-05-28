@@ -11,7 +11,7 @@ from functools import partial
 from tradestrategy import TradeStrategyFactory
 from stockworm import StockWorm
 from optimizeresult import OptimizeResult
-from util import md5
+from util import *
 
 class StockWormManager:
     mixed_domain = [{'name': 'n_neurons', 'type': 'discrete', 'domain': tuple(range(20,160,20))},
@@ -69,13 +69,17 @@ class StockWormManager:
         self.stock_worm_cache_file = stock_worm_cache_file
 
         strategy_cache_file = self.get_strategy_cache_file(start_day_index, end_day_index)
-        trade_strategy_factory = TradeStrategyFactory(cache_file=strategy_cache_file)
+        
 
         if not os.path.isfile(strategy_cache_file):
-            print("Cannot find strategy cache:{}, generating...")
+            print("cannot find strategy cache:{}, generating...".format(strategy_cache_file))
+            data = load_strategy_input_data(self.stock_index, start_day_index, end_day_index)
+            # the input data: timestamp, value, and price.
+            trade_strategy_factory = TradeStrategyFactory(data=data, cache_file=strategy_cache_file)
             strategy_list = trade_strategy_factory.create_trade_strategies(5)
         else:
-            print("Find strategy_cache:{}, loading...")
+            print("find strategy_cache:{}, loading...".format(strategy_cache_file))
+            trade_strategy_factory = TradeStrategyFactory(cache_file=strategy_cache_file)
             strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
 
         opt_func = partial(self.opt_func, strategy_list, start_day_index, end_day_index)
@@ -127,6 +131,10 @@ class StockWormManager:
             "{}_{}".format(self.stock_name, self.stock_index),
             "{}-{}".format(start_day_index, end_day_index))
 
+    def get_model_path(self, start_day_index, end_day_index):
+        swarm_path = self.get_swarm_path(start_day_index, end_day_index)
+        return os.path.join(swarm_path, "models")
+
     def get_stockworm_cache_file(self, start_day_index, end_day_index):
         swarm_path = self.get_swarm_path(start_day_index, end_day_index)
         return os.path.join(swarm_path, "stockworm_cache.txt")
@@ -135,7 +143,7 @@ class StockWormManager:
         swarm_path = self.get_swarm_path(start_day_index, end_day_index)
         return os.path.join(swarm_path, "strategy_cache.txt")
 
-    def create_worms_from_cache(self, n_number, start_day_index, end_day_index):
+    def update_worms_from_cache(self, n_number, start_day_index, end_day_index):
         optimize_result = OptimizeResult(result_column_index=15)
         stockworm_cache_file = self.get_stockworm_cache_file(start_day_index, end_day_index)
         optimize_result.load(stockworm_cache_file)
@@ -148,20 +156,32 @@ class StockWormManager:
         assert(len(top_worms) == n_number)
         swarm_path = self.get_swarm_path(start_day_index, end_day_index)
         for i in range(n_number):
-            features = top_worms[i, :13]
-            features_str = self.get_parameter_str(features)
-            model_save_path = os.path.join(swarm_path, md5(features_str))
-            new_worm = StockWorm(self.stock_index, self.npy_files_path, model_save_path)
-            if os.path.isdir(model_save_path):
-                new_worm.load()
-            else:
-                total_profit, profit_daily, errors_daily = new_worm.init(features, strategy_list, start_day_index, end_day_index)
-                new_worm.save()
-                print("training finished for model {}, total_profit:{}".format(i, total_profit))
-                
-            total_profit, profit_daily, errors_daily = new_worm.test()
+          features = top_worms[i, :13]
+          features_str = self.get_parameter_str(features)
+          model_save_path = os.path.join(swarm_path, "models", md5(features_str))
+          new_worm = StockWorm(self.stock_index, self.npy_files_path, model_save_path)
+          if os.path.isdir(model_save_path) and new_worm.load() == True:
+              pass
+          else:
+              total_profit, profit_daily, errors_daily = new_worm.init(features, strategy_list, start_day_index, end_day_index)
+              new_worm.save()
+              print("training finished for model {}, total_profit:{}".format(i, total_profit))
+            
+
+          testing_total_profit, testing_profit_daily, n_data_appended = new_worm.test()
+          if n_data_appended > 0:
+            print("testing finished for model {}, total_profit:{} in {} days, new data for {} days appended".format(i, 
+                testing_total_profit, len(testing_profit_daily),
+                n_data_appended))
             new_worm.save()
-            print("testing finished for model {}, total_profit:{}".format(i, total_profit))
+
+          self.worm_list.append(new_worm)
+
+      def create_worms_report(self):
+        assert(self.worm_list is not None)
+        for i in range(len(self.worm_list)):
+          print("Report for Worm No.{}".format(i+1))
+          self.worm_list[i].report()
 
     def get_save_path(self, X):
         params_str = self.get_parameter_str(X)

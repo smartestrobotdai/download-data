@@ -13,7 +13,7 @@ class OptimizeResult:
 		new_data = [np.hstack((X,Y))]
 		if self.data is None:
 			self.data = np.array(new_data)
-			return index
+			return 0
 		else:
 			cached_y, index = self.find_result(X)
 			if cached_y == None:
@@ -77,9 +77,9 @@ class OptimizeResult:
 
 		by = self.get_result_column_index()
 		df = pd.DataFrame(self.data)
-		df = df.sort_values(by=by)
-		print(df.tail(n_top_rows))
-		return df.tail(n_top_rows).values
+		df = df.sort_values(by=by,  ascending=False)
+		print(df.head(n_top_rows))
+		return df.head(n_top_rows).values
 
 	def is_best_results(self, n_top_rows, value):
 		by = self.get_result_column_index()

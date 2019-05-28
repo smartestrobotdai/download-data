@@ -6,10 +6,13 @@ import os.path
 import pickle
 from datamanipulator import DataManipulator
 from statefullstmmodel import StatefulLstmModel
-from util import remove_centralized, timestamp2date, get_latest_dir
+from util import *
 import matplotlib.pyplot as plt
 import datetime
+from datetime import timedelta  
 import matplotlib.dates as dates
+
+
 
 class StockWorm:
     def __init__(self, stock_index, input_data_path, save_path):
@@ -98,9 +101,34 @@ class StockWorm:
 
         historic_data = np.concatenate((strategy_data_input, change_rate), axis=2)
         assert(self.historic_data is not None)
-        self.historic_data = np.concatenate((self.historic_data, historic_data), axis=0)
+        n_data_appended = self.append_historic_data(historic_data)
 
-        return total_profit, profit_daily, errors_daily
+        
+        _,_,testing_total_profit, testing_profit_list = self.get_historic_metrics()
+        return  testing_total_profit, testing_profit_list, n_data_appended
+
+
+    def append_historic_data(self, historic_data):
+        last_day_timestamp = self.historic_data[-1,0,0]
+        next_day_timestamp = last_day_timestamp + timedelta(days=1)
+        next_date = timestamp2date(next_day_timestamp)
+        find_date = False
+        for i in range(len(historic_data)):
+            date = timestamp2date(historic_data[i,0,0])
+            if date == next_date:
+                find_date = True
+                break
+
+        if find_date == True:
+            n_data_to_append = len(historic_data)-i
+            print("new data for {} days appended to historic_data from date:{}, ".format(n_data_to_append,
+                timestamp2date(last_day_timestamp)))
+            print(self.historic_data.shape)
+            self.historic_data = np.concatenate((self.historic_data, historic_data[i:]), axis=0)
+            print(self.historic_data.shape)
+        else:
+            print("append_historic_data: no new data found, aborting...")
+        return n_data_to_append
 
     def test_model_base(self, start_day_index, end_day_index):
         data_manipulator = self.data_manipulator
@@ -151,7 +179,9 @@ class StockWorm:
 
         # if the model is ready, this is where we should start to predict.
         learning_end = n_learning_seqs - n_prediction_seqs
-        for i in range(0, n_training_seqs-n_learning_seqs+1, n_prediction_seqs):
+
+
+        for i in range(0, max(n_training_seqs-n_learning_seqs+1,1), n_prediction_seqs):
             # the model is ready, we want to do prediction first.
             if self.model.is_initialized() == True:
                 # do prediction first
@@ -171,6 +201,11 @@ class StockWorm:
                     all_outputs = np.concatenate((all_outputs, outputs), axis=0)
                     errors = np.concatenate((errors, error), axis=0)
 
+            
+            if i + n_learning_seqs >= n_training_seqs:
+                print("expected learning end seq: {}, length of data:{}, no training needed...".format(learning_end, 
+                    n_training_seqs))
+                break
             learning_end = i + n_learning_seqs
             print("start training from seq:{} - seq:{}".format(i, learning_end-1))
             self.model.fit(data_input[i:learning_end], data_output[:learning_end], n_prediction_seqs)
@@ -217,6 +252,10 @@ class StockWorm:
         # get the latest directory
         if load_date == None:
             load_date = get_latest_dir(path)
+
+        if load_date == None:
+            return False
+
         
         print("Loading model for date: {} under: {}".format(load_date, path))
         self.model.load(path, load_date)
@@ -231,6 +270,7 @@ class StockWorm:
         self.learning_end_date = load_date
         filename = self.get_historic_data_filename(path, load_date)
         self.historic_data = np.load(filename, allow_pickle=True)
+        return True
 
     def get_daily_data(self):
         stock_change_rate = self.historic_data[:,:,3]
@@ -240,6 +280,27 @@ class StockWorm:
         date = self.historic_data[:,0,0]
         return np.stack((date, daily_stock_change_rate, daily_asset_change_rate), axis=1)
 
+    def get_historic_metrics(self):
+        assert(self.historic_data is not None)
+        data = self.get_daily_data()
+        training_data_length = self.data_manipulator.get_training_data_len()
+        training_total_profit = np.prod(data[:training_data_length, 2]) - 1
+        testing_total_profit = np.prod(data[training_data_length:, 2]) - 1
+        return training_total_profit, \
+                data[:training_data_length, 1] - 1, testing_total_profit, \
+                data[training_data_length:, 1] - 1
+
+    def report(self):
+        training_total_profit, training_daily_profit, \
+            testing_total_profit, testing_daily_profit = self.get_historic_metrics()
+        print("Training Total Profit: %f" % training_total_profit)
+        print("Training Avg Profit: %f" % mean(training_daily_profit))
+        print("Training Profit Std %f" % stdev(training_daily_profit))
+
+        print("Testing Total Profit: %f" % testing_total_profit)
+        print("Testing Avg Profit: %f" % mean(testing_daily_profit))
+        print("Testing Profit Std %f" % stdev(testing_daily_profit))
+
 
     def plot(self):
         assert(self.historic_data is not None)
@@ -247,11 +308,12 @@ class StockWorm:
         daily_data = self.get_daily_data()
         print("preparing plotting")
         print(daily_data.shape)
-        
         x1 = daily_data[:training_data_length,0]
         y1 = np.cumprod(daily_data[:training_data_length,1])
         z1 = np.cumprod(daily_data[:training_data_length,2])
-        
+        print(x1)
+        print(y1)
+        print(z1)
 
         plt.subplot(2, 1, 1)
         plt.plot(x1,y1)
@@ -260,11 +322,9 @@ class StockWorm:
         #plt.gca().xaxis.set_major_locator(dates.DateLocator())
         
         plt.gcf().autofmt_xdate()
-
         x2 = daily_data[training_data_length:, 0]
         y2 = np.cumprod(daily_data[training_data_length:, 1])
         z2 = np.cumprod(daily_data[training_data_length:, 2])
-
         plt.subplot(2, 1, 2)
         plt.plot(x2,y2)
         plt.plot(x2,z2)
@@ -291,22 +351,28 @@ class StockWorm:
 
 
 if __name__ == '__main__':
-    # from tradestrategy import TradeStrategyFactory
-    # trade_strategy_factory = TradeStrategyFactory()
-    # strategy_list = trade_strategy_factory.create_from_file('strategy_cache.txt', 10)
-    # stock_worm = StockWorm(5, 'npy_files', 'my_model')
 
-    # features=[60.0 , 0.004 , 1.0 , 0.0 , 20.0 , 20.0 ,  1.0 , 99.0,  20.0 , 1.0,  1.0 , 1.0,  1.0]
-    # total_profit, profit_daily, errors_daily = stock_worm.init(features, strategy_list, 0, 60)
-    # print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
-    # stock_worm.save()
+    npy_path = get_preprocessed_data_dir()
+    stock_data_path = get_stock_data_dir()
+    strategy_cache_file = os.path.join(stock_data_path, "Nordea_5", "0-60", "strategy_cache.txt")
+    from tradestrategy import TradeStrategyFactory
+    trade_strategy_factory = TradeStrategyFactory()
 
-    # total_profit1, profit_daily, errors_daily = stock_worm.test()
-    # print("Testing finished: total_profit:{}, profit_daily:{}".format(total_profit1, profit_daily))
+    strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
+    stock_worm = StockWorm(5, npy_path, 'my_model')
 
-    stock_worm2 = StockWorm(5, 'npy_files', 'my_model')
-    stock_worm2.load()    
+    features=[60.0 , 0.004 , 1.0 , 0.0 , 20.0 , 20.0 ,  1.0 , 99.0,  20.0 , 1.0,  1.0 , 1.0,  1.0]
+    total_profit, profit_daily, errors_daily = stock_worm.init(features, strategy_list, 0, 60)
+    print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
+    stock_worm.save()
 
+    total_profit_test, profit_daily_test, n_data_appended = stock_worm.test()
+    print("Testing finished: total_profit:{}, profit_daily:{}, data for {} days appended".format(total_profit_test, profit_daily_test, n_data_appended))
+    stock_worm.save()
+
+    stock_worm2 = StockWorm(5, npy_path, 'my_model')
+    stock_worm2.load()
     stock_worm2.plot()
 
 
+    stock_worm2.report()

@@ -83,7 +83,7 @@ class TradeStrategyFactory:
                 trade_strategy.get_parameter_str()))
             avg_daily_profit = cached_result[0]
         else:
-            total_profit, daily_profit_list =  trade_strategy.get_profit(self.data)
+            total_profit, daily_profit_list,_ =  trade_strategy.get_profit(self.data)
             avg_daily_profit = np.mean(daily_profit_list)
             self.optimize_result.insert_result(X_list, avg_daily_profit)
 
