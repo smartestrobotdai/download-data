@@ -49,6 +49,7 @@ class StockWormManager:
         self.stock_index = stock_index
         self.model_save_path = model_save_path
         self.npy_files_path = npy_files_path
+        self.worm_list = []
 
     def search_worms(self, start_day_index, end_day_index, 
         max_iter=300, is_test=False, search_strategy=False):

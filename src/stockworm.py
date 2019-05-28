@@ -128,6 +128,7 @@ class StockWorm:
             print(self.historic_data.shape)
         else:
             print("append_historic_data: no new data found, aborting...")
+            n_data_to_append = 0
         return n_data_to_append
 
     def test_model_base(self, start_day_index, end_day_index):
