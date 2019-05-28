@@ -31,4 +31,4 @@ swarm_path = stock_worm_manager.get_swarm_path(0, 60)
 if not os.path.isdir(swarm_path):
 	os.makedirs(swarm_path, exist_ok=True)
 
-stock_worm_manager.search_worms(0, 60, is_test=is_test, search_strategy=True)
+stock_worm_manager.search_worms(0, 60, is_test=is_test, search_strategy=search_strategy)
