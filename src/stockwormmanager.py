@@ -177,11 +177,11 @@ class StockWormManager:
 
           self.worm_list.append(new_worm)
 
-      def create_worms_report(self):
-        assert(self.worm_list is not None)
-        for i in range(len(self.worm_list)):
-          print("Report for Worm No.{}".format(i+1))
-          self.worm_list[i].report()
+    def create_worms_report(self):
+      assert(self.worm_list is not None)
+      for i in range(len(self.worm_list)):
+        print("Report for Worm No.{}".format(i+1))
+        self.worm_list[i].report()
 
     def get_save_path(self, X):
         params_str = self.get_parameter_str(X)
