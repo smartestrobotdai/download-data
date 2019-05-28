@@ -51,7 +51,7 @@ class StockWormManager:
         self.npy_files_path = npy_files_path
 
     def search_worms(self, start_day_index, end_day_index, 
-        max_iter=300, is_test=False):
+        max_iter=300, is_test=False, search_strategy=False):
         if is_test == True:
             mixed_domain = self.mixed_domain_test
         else:
@@ -70,17 +70,19 @@ class StockWormManager:
 
         strategy_cache_file = self.get_strategy_cache_file(start_day_index, end_day_index)
         
-
-        if not os.path.isfile(strategy_cache_file):
-            print("cannot find strategy cache:{}, generating...".format(strategy_cache_file))
-            data = load_strategy_input_data(self.stock_index, start_day_index, end_day_index)
-            # the input data: timestamp, value, and price.
-            trade_strategy_factory = TradeStrategyFactory(data=data, cache_file=strategy_cache_file)
-            strategy_list = trade_strategy_factory.create_trade_strategies(5)
-        else:
+        trade_strategy_factory = TradeStrategyFactory(cache_file=strategy_cache_file)
+        if os.path.isfile(strategy_cache_file) and search_strategy == False:
             print("find strategy_cache:{}, loading...".format(strategy_cache_file))
-            trade_strategy_factory = TradeStrategyFactory(cache_file=strategy_cache_file)
             strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
+        else:
+          if search_strategy == True:
+            print("search_strategy is True, searching strategies again...")
+          else:
+            print("cannot find strategy cache:{}, generating...".format(strategy_cache_file))
+
+          data = load_strategy_input_data(self.stock_index, start_day_index, end_day_index)
+          # the input data: timestamp, value, and price.
+          strategy_list = trade_strategy_factory.create_trade_strategies(data, 5)
 
         opt_func = partial(self.opt_func, strategy_list, start_day_index, end_day_index)
 

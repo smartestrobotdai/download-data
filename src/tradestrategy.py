@@ -14,10 +14,7 @@ class TradeStrategyFactory:
                  {'name': 'stop_loss', 'type': 'discrete', 'domain': tuple(np.around(np.arange(-0.01,-0.003, 0.001),3))},
                  {'name': 'stop_gain', 'type': 'discrete', 'domain': tuple(np.around(np.arange(0.002, 0.02,0.001),3))},
          ]
-    def __init__(self, data=None, cache_file=None,  n_max_trades_per_day=4, slippage=0.00015, courtage=0):
-        if data is not None:
-            assert(data.shape[1]==504)
-        self.data = data
+    def __init__(self, cache_file=None,  n_max_trades_per_day=4, slippage=0.00015, courtage=0):
         self.n_max_trades_per_day = n_max_trades_per_day
         self.slippage = slippage
         self.courtage = courtage
@@ -43,7 +40,9 @@ class TradeStrategyFactory:
 
         return trade_strategy_list
 
-    def create_trade_strategies(self, iter, max_iter=200):
+    def create_trade_strategies(self, data, iter, max_iter=200):
+        assert(data.shape[1]==504)
+        self.data = data
         init_numdata = int(max_iter / 4)
         trade_strategy_list = []
         for i in range(iter):
