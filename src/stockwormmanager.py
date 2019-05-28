@@ -13,6 +13,8 @@ from stockworm import StockWorm
 from optimizeresult import OptimizeResult
 from util import *
 
+NUM_STRATEGIES=10
+
 class StockWormManager:
     mixed_domain = [{'name': 'n_neurons', 'type': 'discrete', 'domain': tuple(range(20,160,20))},
       {'name': 'learning_rate', 'type': 'discrete', 'domain': (0.001,0.002,0.003,0.004)},
@@ -74,7 +76,7 @@ class StockWormManager:
         trade_strategy_factory = TradeStrategyFactory(cache_file=strategy_cache_file)
         if os.path.isfile(strategy_cache_file) and search_strategy == False:
             print("find strategy_cache:{}, loading...".format(strategy_cache_file))
-            strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
+            strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, NUM_STRATEGIES)
         else:
           if search_strategy == True:
             print("search_strategy is True, searching strategies again...")
@@ -154,7 +156,7 @@ class StockWormManager:
 
         trade_strategy_factory = TradeStrategyFactory()
         strategy_cache_file = self.get_strategy_cache_file(start_day_index, end_day_index)
-        strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, 10)
+        strategy_list = trade_strategy_factory.create_from_file(strategy_cache_file, NUM_STRATEGIES)
 
         assert(len(top_worms) == n_number)
         swarm_path = self.get_swarm_path(start_day_index, end_day_index)
@@ -180,7 +182,7 @@ class StockWormManager:
 
           self.worm_list.append(new_worm)
 
-    def create_worms_report(self):
+    def report(self):
       assert(self.worm_list is not None)
       for i in range(len(self.worm_list)):
         print("Report for Worm No.{}".format(i+1))

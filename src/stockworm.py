@@ -72,7 +72,7 @@ class StockWorm:
             best_change_rate = change_rate
 
         self.strategy_model = best_strategy_model
-        self.historic_data = np.concatenate((strategy_data_input, change_rate), axis=2)
+        self.historic_data = np.concatenate((strategy_data_input, best_change_rate), axis=2)
 
         return max_total_profit, max_profit_daily, errors_daily
     
@@ -222,7 +222,7 @@ class StockWorm:
 
     def save(self):
         assert(self.learning_end_date != None)
-        self.create_if_not_exist(self.save_path)
+        create_if_not_exist(self.save_path)
         path = self.save_path
         # what is the last training date?
         self.model.save(path, self.learning_end_date)
@@ -291,6 +291,7 @@ class StockWorm:
     def report(self):
         training_total_profit, training_daily_profit, \
             testing_total_profit, testing_daily_profit = self.get_historic_metrics()
+        print("training daily:{}".format(training_daily_profit))
         print("Training Total Profit: %f" % training_total_profit)
         print("Training Avg Profit: %f" % mean(training_daily_profit))
         print("Training Profit Std %f" % stdev(training_daily_profit))
@@ -359,6 +360,7 @@ if __name__ == '__main__':
     features=[60.0 , 0.004 , 1.0 , 0.0 , 20.0 , 20.0 ,  1.0 , 99.0,  20.0 , 1.0,  1.0 , 1.0,  1.0]
     total_profit, profit_daily, errors_daily = stock_worm.init(features, strategy_list, 0, 60)
     print("Training finished: total_profit:{}, profit_daily:{}".format(total_profit, profit_daily))
+    print("prod of profit_daily:{}".format(np.prod(np.array(profit_daily)+1)-1))
     stock_worm.save()
 
     total_profit_test, profit_daily_test, n_data_appended = stock_worm.test()
