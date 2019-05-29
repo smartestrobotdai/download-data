@@ -19,7 +19,7 @@ if len(sys.argv) >= 6:
 
 is_test = False
 if len(sys.argv) >= 7:
-	is_test = bool(sys.argv[6])
+	is_test = bool(int(sys.argv[6]))
 
 stock_data_dir = get_stock_data_dir()
 preprocessed_data_dir = get_preprocessed_data_dir()
