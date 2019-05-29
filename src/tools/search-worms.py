@@ -15,7 +15,7 @@ end_day_index = int(sys.argv[4])
 
 search_strategy = False
 if len(sys.argv) >= 6:
-	search_strategy = bool(sys.argv[5])
+	search_strategy = bool(int(sys.argv[5]))
 
 is_test = False
 if len(sys.argv) >= 7:
