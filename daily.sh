@@ -38,15 +38,15 @@ docker exec -t postgres-omxs pg_dumpall -c -U postgres > dbbackup/dump_$SUFFIX.s
 
 gzip dbbackup/dump_$SUFFIX.sql
 cp -f dbbackup/dump_$SUFFIX.sql.gz dbbackup/dump.sql.gz
-git add dbbackup/dump.sql.gz
+#git add dbbackup/dump.sql.gz
 
 PGPASSWORD=dai psql -h 0.0.0.0 -U postgres -f export_data.sql
 docker cp postgres-omxs:/tmp/data.csv ./data
 rm -rf data/data.csv.gz
 gzip data/data.csv
-git add data/data.csv.gz
-git commit -m "new backup and new data"
-git push
+#git add data/data.csv.gz
+#git commit -m "new backup and new data"
+#git push
 echo "`date` daily task finished">>${LOG_FILE}
 
 docker-compose down
@@ -61,9 +61,9 @@ if [ $? -ne 0 ]; then
 fi
 
 cd ${DIR}
-git add preprocessed-data/*.npy
-git commit -m "new preprocessed-data"
-git push
+#git add preprocessed-data/*.npy
+#git commit -m "new preprocessed-data"
+#git push
 
 
 cd ${ORI_DIR}
